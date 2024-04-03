@@ -1,10 +1,10 @@
 package http
 
 import (
-	"github.com/paulvitic/ddd-go"
+	ddd "github.com/paulvitic/ddd-go"
 	"net/http"
 )
 
-type CommandTranslator func(from *http.Request) (go_ddd.Command, error)
+type CommandTranslator func(from *http.Request) (ddd.Command, error)
 
-type QueryTranslator func(from *http.Request) (go_ddd.Query, error)
+type QueryTranslator func(from *http.Request) (ddd.Query, error)

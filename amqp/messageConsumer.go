@@ -1,40 +1,41 @@
 package amqp
 
 import (
-	"github.com/paulvitic/ddd-go"
+	ddd "github.com/paulvitic/ddd-go"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"log"
 )
 
 type messageConsumer struct {
-	go_ddd.MessageConsumer
+	ddd.MessageConsumer
+	config  Configuration
 	conn    *amqp.Connection
 	channel *amqp.Channel
 	queue   *amqp.Queue
 }
 
-func MessageConsumer(base go_ddd.MessageConsumer, config Configuration) (go_ddd.MessageConsumer, error) {
-	conn, err := amqp.Dial(connectionUrl(config))
-	failOnError(err, "Failed to connect to RabbitMQ")
-
-	consumer := &messageConsumer{
+func MessageConsumer(base ddd.MessageConsumer, config Configuration) ddd.MessageConsumer {
+	return &messageConsumer{
 		MessageConsumer: base,
-		conn:            conn,
+		config:          config,
 	}
-	defer consumer.Stop()
-
-	ch, err := conn.Channel()
-	failOnError(err, "Failed to open a channel")
-	consumer.channel = ch
-
-	queue, err := declareQueue(ch, config.Queue)
-	failOnError(err, "Failed to declare queue")
-	consumer.queue = &queue
-
-	return consumer, nil
 }
 
 func (p *messageConsumer) Start() error {
+	conn, err := amqp.Dial(connectionUrl(p.config))
+	failOnError(err, "Failed to connect to RabbitMQ")
+	p.conn = conn
+
+	defer p.Stop()
+
+	ch, err := conn.Channel()
+	failOnError(err, "Failed to open a channel")
+	p.channel = ch
+
+	queue, err := declareQueue(ch, p.config.Queue)
+	failOnError(err, "Failed to declare queue")
+	p.queue = &queue
+
 	msgs, err := p.channel.Consume(
 		p.queue.Name, // queue
 		"",           // consumer

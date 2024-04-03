@@ -37,7 +37,7 @@ func connectionUrl(settings Configuration) string {
 	}
 	return "amqp://" + settings.Username + ":" +
 		settings.Password + "@" + settings.Host + ":" +
-		strconv.Itoa(settings.Port) + "/"
+		strconv.Itoa(settings.Port) + "/" + settings.VirtualHost
 }
 
 func declareExchange(ch *amqp.Channel, name string) error {

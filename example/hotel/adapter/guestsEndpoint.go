@@ -16,7 +16,7 @@ func guestsQueryTranslator(from *http.Request) (go_ddd.Query, error) {
 
 func GuestsEndpoint() dddhttp.Endpoint {
 	return &guestsEndpoint{
-		Endpoint: dddhttp.NewEndpoint("/guests").
+		Endpoint: dddhttp.NewEndpoint("guests").
 			WithQueryTranslator(guestsQueryTranslator),
 	}
 }

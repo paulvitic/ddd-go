@@ -2,7 +2,7 @@ package http
 
 import (
 	"encoding/json"
-	"github.com/paulvitic/ddd-go"
+	ddd "github.com/paulvitic/ddd-go"
 	"log"
 	"net/http"
 )
@@ -11,8 +11,8 @@ type Endpoint interface {
 	Path() string
 	WithCommandTranslator(CommandTranslator) Endpoint
 	WithQueryTranslator(QueryTranslator) Endpoint
-	RegisterCommandBus(go_ddd.CommandBus)
-	RegisterQueryBus(go_ddd.QueryBus)
+	RegisterCommandBus(ddd.CommandBus)
+	RegisterQueryBus(ddd.QueryBus)
 	Methods() []string
 	Handler() func(http.ResponseWriter, *http.Request)
 }
@@ -20,8 +20,8 @@ type Endpoint interface {
 type endpoint struct {
 	path              string
 	methods           []string
-	commandBus        go_ddd.CommandBus
-	queryBus          go_ddd.QueryBus
+	commandBus        ddd.CommandBus
+	queryBus          ddd.QueryBus
 	commandTranslator CommandTranslator
 	queryTranslator   QueryTranslator
 }
@@ -41,14 +41,14 @@ func (e *endpoint) Path() string {
 	return e.path
 }
 
-func (e *endpoint) RegisterCommandBus(bus go_ddd.CommandBus) {
+func (e *endpoint) RegisterCommandBus(bus ddd.CommandBus) {
 	if e.commandBus != nil {
 		log.Printf("Command bus already set for endpoint %s", e.path)
 	}
 	e.commandBus = bus
 }
 
-func (e *endpoint) RegisterQueryBus(bus go_ddd.QueryBus) {
+func (e *endpoint) RegisterQueryBus(bus ddd.QueryBus) {
 	if e.queryBus != nil {
 		log.Printf("Query bus already set for endpoint %s", e.path)
 	}
@@ -80,44 +80,87 @@ func (e *endpoint) Methods() []string {
 
 func (e *endpoint) Handler() func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method == http.MethodGet && e.queryTranslator != nil {
-			query, err := e.queryTranslator(request)
-			if err != nil {
-				log.Printf("Error translating query: %v", err)
-				writer.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			res, err := e.queryBus.Dispatch(request.Context(), query)
-			if err != nil {
-				log.Printf("Error dispatching query: %v", err)
-				writer.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			// Write response
-			writer.WriteHeader(http.StatusOK)
-			err = json.NewEncoder(writer).Encode(res)
-			if err != nil {
-				log.Printf("Error encoding response: %v", err)
-				writer.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-		} else if e.commandTranslator != nil {
-			command, err := e.commandTranslator(request)
-			if err != nil {
-				log.Printf("Error translating command: %v", err)
-				writer.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			err = e.commandBus.Dispatch(request.Context(), command)
-			if err != nil {
-				log.Printf("Error dispatching command: %v", err)
-				writer.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			writer.WriteHeader(http.StatusAccepted)
-		} else {
-			log.Printf("No translator for method %s on endpoint %s", request.Method, e.path)
-			writer.WriteHeader(http.StatusMethodNotAllowed)
+		switch request.Method {
+		case http.MethodGet:
+			e.handleGet(writer, request)
+		case http.MethodPost, http.MethodPut, http.MethodDelete:
+			e.handleCommand(writer, request)
+		default:
+			http.Error(writer, "Method not allowed", http.StatusMethodNotAllowed)
 		}
+	}
+}
+
+func (e *endpoint) handleGet(writer http.ResponseWriter, request *http.Request) {
+	if e.queryTranslator == nil {
+		http.Error(writer, "No translator for GET method", http.StatusNotAcceptable)
+		return
+	}
+
+	query, err := e.queryTranslator(request)
+	if err != nil {
+		log.Printf("Error translating query: %v", err)
+		http.Error(writer, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	if query == nil {
+		log.Printf("query translator returned nil query")
+		http.Error(writer, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if query, ok := query.(ddd.Query); ok && e.queryBus != nil {
+		res, err := e.queryBus.Dispatch(request.Context(), query)
+		if err != nil {
+			log.Printf("Error dispatching query: %v", err)
+			http.Error(writer, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		// Write response
+		writer.WriteHeader(http.StatusOK)
+		err = json.NewEncoder(writer).Encode(res)
+		if err != nil {
+			log.Printf("Error encoding response: %v", err)
+			http.Error(writer, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		log.Printf("No query bus to dispatch query %s", query.Type())
+		http.Error(writer, "Not acceptable", http.StatusNotAcceptable)
+	}
+}
+
+func (e *endpoint) handleCommand(writer http.ResponseWriter, request *http.Request) {
+	if e.commandTranslator == nil {
+		http.Error(writer, "No translator for POST/PUT/DELETE methods", http.StatusNotAcceptable)
+		return
+	}
+
+	command, err := e.commandTranslator(request)
+	if err != nil {
+		log.Printf("Error translating command: %v", err)
+		http.Error(writer, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	if command == nil {
+		log.Printf("command translator returned nil command")
+		http.Error(writer, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if command, ok := command.(ddd.Command); ok {
+		err = e.commandBus.Dispatch(request.Context(), command)
+		if err != nil {
+			log.Printf("Error dispatching command: %v", err)
+			http.Error(writer, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		writer.WriteHeader(http.StatusAccepted)
+	} else {
+		log.Printf("No command bus to dispatch command %s", command.Type())
+		http.Error(writer, "Not acceptable", http.StatusNotAcceptable)
 	}
 }

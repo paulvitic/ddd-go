@@ -121,12 +121,12 @@ func TestNewInMemoryMessageConsumer(t *testing.T) {
 		close(queue)
 	})
 	// Test successful creation
-	consumer := MessageConsumer(go_ddd.NewMessageConsumer("target"), &queue)
+	consumer := MessageConsumer(go_ddd.NewMessageConsumer("target", translator), &queue)
 	assert.NotNil(t, consumer)
 
 	// Test failure with nil arguments
 	assert.Panics(t, func() {
-		MessageConsumer(go_ddd.NewMessageConsumer("target"), nil)
+		MessageConsumer(go_ddd.NewMessageConsumer("target", translator), nil)
 	})
 }
 
@@ -146,11 +146,8 @@ func TestStart(t *testing.T) {
 	eventBusMock := NewMockEventBus(t)
 	eventBusMock.ExpectDispatch(ctx, testEvent) // Assuming a MockEventBus implementation exists
 
-	consumer := MessageConsumer(
-		go_ddd.NewMessageConsumer("target").
-			WithEventTranslator(translator).
-			WithEventBus(eventBusMock),
-		&queue)
+	consumer := MessageConsumer(go_ddd.NewMessageConsumer("target", translator), &queue)
+	consumer.SetEventBus(eventBusMock)
 
 	err := consumer.Start()
 	assert.NoError(t, err)
@@ -216,11 +213,8 @@ func TestInMemoryMessageConsumer(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	consumer := MessageConsumer(
-		go_ddd.NewMessageConsumer("target").
-			WithEventTranslator(translator).
-			WithEventBus(testEventBus),
-		&msgQueue)
+	consumer := MessageConsumer(go_ddd.NewMessageConsumer("target", translator), &msgQueue)
+	consumer.SetEventBus(testEventBus)
 	err = consumer.Start()
 	assert.NoError(t, err)
 

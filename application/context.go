@@ -33,9 +33,11 @@ func NewContext(options interface{}) *Context {
 
 	} else if contextName, ok := options.(string); ok {
 		name = contextName
-	} else if config, ok := options.(Configuration); ok {
-		if config.Context != "" && config.Context != "default" {
-			name = config.Context
+		eventPublisher = inMemory.NewEventPublisher()
+
+	} else if config, ok := options.(Context); ok {
+		if config.name != "" && config.name != "default" {
+			name = config.name
 		} else {
 			name = "default"
 		}
@@ -87,7 +89,8 @@ func (c *Context) RegisterView(view go_ddd.View) *Context {
 
 func (c *Context) RegisterMessageConsumer(consumer go_ddd.MessageConsumer) *Context {
 	if _, ok := c.messageConsumers[consumer.Target()]; !ok {
-		c.messageConsumers[consumer.Target()] = consumer.WithEventBus(c.eventBus)
+		consumer.SetEventBus(c.eventBus)
+		c.messageConsumers[consumer.Target()] = consumer
 	}
 	return c
 }

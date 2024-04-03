@@ -20,7 +20,7 @@ func queryTranslator(from *http.Request) (go_ddd.Query, error) {
 
 func RoomEndpoint() ddd_http.Endpoint {
 	return &roomEndpoint{
-		Endpoint: ddd_http.NewEndpoint("/room").
+		Endpoint: ddd_http.NewEndpoint("room").
 			WithCommandTranslator(commandTranslator).
 			WithQueryTranslator(queryTranslator),
 	}

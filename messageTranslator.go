@@ -1,3 +1,3 @@
 package go_ddd
 
-type EventTranslator func(from []byte) (Event, error)
+type MessageTranslator func(from []byte) (Event, error)

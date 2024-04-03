@@ -7,12 +7,13 @@ import (
 	"github.com/paulvitic/ddd-go/example/hotel/domain"
 )
 
-func NewHotel() *app.Context {
+func Context() *app.Context {
 	return app.NewContext("hotel").
 		RegisterPolicy(domain.Checkout()).
 		RegisterView(adapter.Guests()).
+		RegisterCommandService(application.RoomService(adapter.RoomRepo())).
+		RegisterQueryService(application.GuestsService(adapter.Guests())).
 		RegisterHttpEndpoint(adapter.RoomEndpoint()).
 		RegisterHttpEndpoint(adapter.GuestsEndpoint()).
-		RegisterCommandService(application.RoomService(adapter.RoomRepo())).
-		RegisterQueryService(application.GuestsService(adapter.Guests()))
+		RegisterMessageConsumer(adapter.AuthMsgConsumer())
 }

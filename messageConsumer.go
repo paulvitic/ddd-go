@@ -7,8 +7,7 @@ import (
 )
 
 type MessageConsumer interface {
-	WithEventBus(eventBus EventBus) MessageConsumer
-	WithEventTranslator(translator EventTranslator) MessageConsumer
+	SetEventBus(eventBus EventBus)
 	Target() string
 	ProcessMessage(msg []byte) error
 	Start() error
@@ -18,25 +17,19 @@ type MessageConsumer interface {
 type messageConsumer struct {
 	target     string
 	eventBus   EventBus
-	translator EventTranslator
+	translator MessageTranslator
 }
 
-func NewMessageConsumer(target string) MessageConsumer {
+func NewMessageConsumer(target string, translator MessageTranslator) MessageConsumer {
 	return &messageConsumer{
 		target:     target,
+		translator: translator,
 		eventBus:   nil,
-		translator: nil,
 	}
 }
 
-func (p *messageConsumer) WithEventBus(eventBus EventBus) MessageConsumer {
+func (p *messageConsumer) SetEventBus(eventBus EventBus) {
 	p.eventBus = eventBus
-	return p
-}
-
-func (p *messageConsumer) WithEventTranslator(translator EventTranslator) MessageConsumer {
-	p.translator = translator
-	return p
 }
 
 func (p *messageConsumer) Target() string {
@@ -44,7 +37,7 @@ func (p *messageConsumer) Target() string {
 }
 
 func (p *messageConsumer) Start() error {
-	return errors.New("need a concrete implementation of message consumer")
+	return errors.New("BaseMessageConsumer: need a concrete implementation")
 }
 
 func (p *messageConsumer) Stop() {
@@ -53,7 +46,7 @@ func (p *messageConsumer) Stop() {
 
 func (p *messageConsumer) ProcessMessage(msg []byte) error {
 	if p.translator == nil {
-		return errors.New("EventTranslator not set")
+		return errors.New("MessageTranslator not set")
 	}
 	if p.eventBus == nil {
 		return errors.New("EventBus not set")

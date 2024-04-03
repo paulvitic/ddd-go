@@ -2,6 +2,7 @@ package application
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -9,28 +10,21 @@ import (
 )
 
 type Configuration struct {
-	Context  string
-	Profile  string
-	Port     string `json:"port"`
-	RabbitMQ struct {
-		Url string `json:"url"`
-	} `json:"rabbitMq"`
-	MongoDb struct {
-		Uri string `json:"uri"`
-	} `json:"mongoDb"`
+	Profile string
+	Port    string `json:"port"`
 }
 
 func NewConfig(profile string) (config *Configuration, errs []error) {
 
 	if profile != "" {
-		log.Printf("[info] starting in %s profile", profile)
+		logConfigInfo("starting in %s profile", profile)
 		profile = "." + strings.ToLower(profile)
 	} else {
-		log.Printf("[info] starting in production mode")
+		logConfigInfo("starting in production mode")
 	}
 
 	configPath := "./properties" + profile + ".json"
-	log.Printf("[info] loading configuration from %s", configPath)
+	logConfigInfo("loading configuration from %s", configPath)
 
 	if configFile, err := os.Open(configPath); err != nil {
 		log.Printf("%#v", err.Error())
@@ -61,4 +55,8 @@ func closeWhenDone(target io.Closer, errs []error) func() {
 			errs = append(errs, err)
 		}
 	}
+}
+
+func logConfigInfo(msg string, args ...interface{}) {
+	log.Printf(fmt.Sprintf(fmt.Sprintf("[info] AppConfig: %s", msg), args...))
 }

@@ -2,19 +2,19 @@ package inMemory
 
 import (
 	"errors"
-	go_ddd "github.com/paulvitic/ddd-go"
+	ddd "github.com/paulvitic/ddd-go"
 	"log"
 	"sync/atomic"
 )
 
 type messageConsumer struct {
-	go_ddd.MessageConsumer
+	ddd.MessageConsumer
 	channel    *chan string
 	processing chan string
 	running    atomic.Bool
 }
 
-func MessageConsumer(base go_ddd.MessageConsumer, channel *chan string) go_ddd.MessageConsumer {
+func MessageConsumer(base ddd.MessageConsumer, channel *chan string) ddd.MessageConsumer {
 	if channel == nil {
 		panic(errors.New("queue cannot be nil"))
 	}
