@@ -30,7 +30,7 @@ jobs:
 
     - name: Check coverage
       #run: go tool cover -func=coverage.out | grep 'total:' | awk '{print $3}' | sed 's/%//g' | awk '{if($1 < 70.0) exit 1}'
-      run: echo "Coverage is $(go tool cover -func=coverage.out | grep 'total:' | awk '{print $3}' | sed 's/%//g')"
+      run: echo "Coverage is $(go tool cover -func=coverage.out | grep 'total:' | awk '{print $3}' | sed 's/%//g')%"
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v2
