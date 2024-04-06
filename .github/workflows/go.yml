@@ -11,10 +11,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@4
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
         go-version: '1.22'
 
@@ -33,7 +33,7 @@ jobs:
       run: echo "Coverage is $(go tool cover -func=coverage.out | grep 'total:' | awk '{print $3}' | sed 's/%//g')%"
 
     - name: Upload coverage report
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: coverage-report
         path: coverage.html
