@@ -1,4 +1,4 @@
-package go_ddd
+package ddd
 
 type Entity interface {
 	ID() ID

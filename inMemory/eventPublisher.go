@@ -19,13 +19,13 @@ type eventPublisher struct {
 	queue chan string
 }
 
-func NewEventPublisher() go_ddd.EventPublisher {
+func NewEventPublisher() ddd.EventPublisher {
 	return &eventPublisher{
 		queue: make(chan string),
 	}
 }
 
-func (p *eventPublisher) Publish(event go_ddd.Event) error {
+func (p *eventPublisher) Publish(event ddd.Event) error {
 	jsonString, err := event.ToJsonString()
 	if err != nil {
 		return err
@@ -38,12 +38,12 @@ func (p *eventPublisher) Close() {
 	close(p.queue)
 }
 
-func (p *eventPublisher) Middleware() go_ddd.MiddlewareFunc {
-	return func(next go_ddd.HandlerFunc) go_ddd.HandlerFunc {
-		return func(ctx context.Context, msg go_ddd.Payload) (interface{}, error) {
+func (p *eventPublisher) Middleware() ddd.MiddlewareFunc {
+	return func(next ddd.HandlerFunc) ddd.HandlerFunc {
+		return func(ctx context.Context, msg ddd.Payload) (interface{}, error) {
 			publishEvent, ok := ctx.Value("publishEvent").(bool)
 			if !ok || (ok && publishEvent) {
-				err := p.Publish(msg.(go_ddd.Event))
+				err := p.Publish(msg.(ddd.Event))
 				if err != nil {
 					return nil, err
 				}

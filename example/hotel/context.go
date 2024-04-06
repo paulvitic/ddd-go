@@ -11,9 +11,9 @@ func Context() *app.Context {
 	return app.NewContext("hotel").
 		RegisterPolicy(domain.Checkout()).
 		RegisterView(adapter.Guests()).
+		RegisterCommandEndpoint(adapter.RoomEndpoint()).
 		RegisterCommandService(application.RoomService(adapter.RoomRepo())).
+		RegisterQueryEndpoint(adapter.GuestsEndpoint()).
 		RegisterQueryService(application.GuestsService(adapter.Guests())).
-		RegisterHttpEndpoint(adapter.RoomEndpoint()).
-		RegisterHttpEndpoint(adapter.GuestsEndpoint()).
 		RegisterMessageConsumer(adapter.AuthMsgConsumer())
 }

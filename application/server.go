@@ -8,6 +8,9 @@ import (
 	"github.com/paulvitic/ddd-go/http"
 	"github.com/paulvitic/ddd-go/inMemory"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 type Server struct {
@@ -53,23 +56,33 @@ func (a *Server) WithHttpServer(server *http.Server) *Server {
 }
 
 func (a *Server) Start() error {
-	if err := a.registerHttpEndpoints(); err != nil {
-		return err
-	}
+	a.registerHttpEndpoints()
 	if err := a.startMessageConsumers(); err != nil {
 		return err
 	}
+
+	a.httpServer.Start()
+
+	sigs := make(chan os.Signal, 1)
+	// Register the channel to receive interrupt signals
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	// Wait for a signal
+	<-sigs
+
+	fmt.Println("Exiting application")
 	return nil
 }
 
-func (a *Server) registerHttpEndpoints() error {
+func (a *Server) registerHttpEndpoints() {
 	logServerInfo("registering http endpoints")
 	for _, context := range a.contexts {
-		for _, endpoint := range context.endpoints {
+		for _, endpoint := range context.queryEndpoints {
+			a.httpServer.RegisterEndpoint(endpoint)
+		}
+		for _, endpoint := range context.commandEndpoints {
 			a.httpServer.RegisterEndpoint(endpoint)
 		}
 	}
-	return nil
 }
 
 func (a *Server) startMessageConsumers() error {
@@ -83,7 +96,7 @@ func (a *Server) startMessageConsumers() error {
 	return nil
 }
 
-func (a *Server) startMessageConsumer(context *Context, consumer ddd.MessageConsumer) error {
+func (a *Server) startMessageConsumer(context *Context, consumer ddd.MessageConsumer) {
 	logServerInfo("starting %s context %s message consumer", context.name, consumer.Target())
 	target := consumer.Target()
 	if a.contexts[target] != nil {

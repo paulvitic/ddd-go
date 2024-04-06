@@ -6,21 +6,21 @@ import (
 )
 
 type checkout struct {
-	go_ddd.Policy
+	ddd.Policy
 }
 
-func Checkout() go_ddd.Policy {
+func Checkout() ddd.Policy {
 	return &checkout{
-		go_ddd.NewPolicy([]interface{}{GuestLocationReceived{}}),
+		ddd.NewPolicy([]interface{}{GuestLocationReceived{}}),
 	}
 }
 
-func (c *checkout) When(event go_ddd.Event) (go_ddd.Command, error) {
+func (c *checkout) When(event ddd.Event) (ddd.Command, error) {
 	switch event.Type() {
-	case go_ddd.EventType(GuestLocationReceived{}):
-		payload := go_ddd.MapEventPayload(event, GuestLocationReceived{})
+	case ddd.EventType(GuestLocationReceived{}):
+		payload := ddd.MapEventPayload(event, GuestLocationReceived{})
 		if isCheckedOut(payload.Latitude, payload.Longitude) {
-			return go_ddd.NewCommand(CheckoutGuest{}), nil
+			return ddd.NewCommand(CheckoutGuest{}), nil
 		}
 		return nil, nil
 	default:

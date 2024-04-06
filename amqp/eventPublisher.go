@@ -9,12 +9,13 @@ import (
 )
 
 type eventPublisher struct {
+	config  Configuration
 	conn    *amqp.Connection
 	channel *amqp.Channel
 	queue   *amqp.Queue
 }
 
-func NewEventPublisher(config Configuration) go_ddd.EventPublisher {
+func NewEventPublisher(config Configuration) ddd.EventPublisher {
 	conn, err := amqp.Dial(connectionUrl(config))
 	failOnError(err, "Failed to connect to RabbitMQ")
 	publisher := &eventPublisher{
@@ -25,9 +26,6 @@ func NewEventPublisher(config Configuration) go_ddd.EventPublisher {
 	ch, err := conn.Channel()
 	failOnError(err, "Failed to open a channel")
 	publisher.channel = ch
-
-	err = declareExchange(ch, config.Exchange)
-	failOnError(err, "Failed to declare exchange")
 
 	err = declareExchange(ch, config.Exchange)
 	failOnError(err, "Failed to declare exchange")
@@ -43,7 +41,7 @@ func NewEventPublisher(config Configuration) go_ddd.EventPublisher {
 	return publisher
 }
 
-func (p *eventPublisher) Publish(event go_ddd.Event) error {
+func (p *eventPublisher) Publish(event ddd.Event) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -51,10 +49,10 @@ func (p *eventPublisher) Publish(event go_ddd.Event) error {
 		return err
 	} else {
 		if err = p.channel.PublishWithContext(ctx,
-			"",           // exchange
-			p.queue.Name, // routing key
-			false,        // mandatory
-			false,        // immediate
+			p.config.Exchange, // exchange
+			p.queue.Name,      // routing key
+			false,             // mandatory
+			false,             // immediate
 			amqp.Publishing{
 				ContentType: "text/plain",
 				Body:        []byte(body),
@@ -66,12 +64,12 @@ func (p *eventPublisher) Publish(event go_ddd.Event) error {
 	}
 }
 
-func (p *eventPublisher) Middleware() go_ddd.MiddlewareFunc {
-	return func(next go_ddd.HandlerFunc) go_ddd.HandlerFunc {
-		return func(ctx context.Context, msg go_ddd.Payload) (interface{}, error) {
+func (p *eventPublisher) Middleware() ddd.MiddlewareFunc {
+	return func(next ddd.HandlerFunc) ddd.HandlerFunc {
+		return func(ctx context.Context, msg ddd.Payload) (interface{}, error) {
 			publishEvent, ok := ctx.Value("publishEvent").(bool)
 			if !ok || (ok && publishEvent) {
-				err := p.Publish(msg.(go_ddd.Event))
+				err := p.Publish(msg.(ddd.Event))
 				if err != nil {
 					return nil, err
 				}
@@ -82,7 +80,7 @@ func (p *eventPublisher) Middleware() go_ddd.MiddlewareFunc {
 }
 
 func (p *eventPublisher) Queue() interface{} {
-	return p.queue
+	return p.config
 }
 
 func (p *eventPublisher) Close() {

@@ -20,11 +20,11 @@ func TestInMemoryEventPublisher(t *testing.T) {
 		publisher.Close()
 	})
 
-	event := go_ddd.NewEventProducer().
-		RegisterEvent("aggType", go_ddd.NewID("ID123"), testEventPayload{Name: "value"}).
+	event := ddd.NewEventProducer().
+		RegisterEvent("aggType", ddd.NewID("ID123"), testEventPayload{Name: "value"}).
 		GetFirst()
 
-	_, err := publisher.Middleware()(func(ctx context.Context, msg go_ddd.Payload) (interface{}, error) {
+	_, err := publisher.Middleware()(func(ctx context.Context, msg ddd.Payload) (interface{}, error) {
 		return nil, nil
 	})(context.Background(), event)
 	assert.NoError(t, err)
