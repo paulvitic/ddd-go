@@ -30,7 +30,7 @@ func (e *CommandEndpoint) RegisterCommandBus(bus ddd.CommandBus) {
 func (e *CommandEndpoint) Handler() func(http.ResponseWriter, *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		if e.translator == nil {
-			http.Error(writer, "No translator for POST/PUT/DELETE methods", http.StatusNotAcceptable)
+			http.Error(writer, "No translator for found", http.StatusNotAcceptable)
 			return
 		}
 

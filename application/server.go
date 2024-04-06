@@ -57,10 +57,7 @@ func (a *Server) WithHttpServer(server *http.Server) *Server {
 
 func (a *Server) Start() error {
 	a.registerHttpEndpoints()
-	if err := a.startMessageConsumers(); err != nil {
-		return err
-	}
-
+	a.startMessageConsumers()
 	a.httpServer.Start()
 
 	sigs := make(chan os.Signal, 1)
@@ -85,18 +82,17 @@ func (a *Server) registerHttpEndpoints() {
 	}
 }
 
-func (a *Server) startMessageConsumers() error {
+func (a *Server) startMessageConsumers() {
 	for _, context := range a.contexts {
 		for _, consumer := range context.messageConsumers {
 			if err := a.startMessageConsumer(context, consumer); err != nil {
-				return err
+				panic(err)
 			}
 		}
 	}
-	return nil
 }
 
-func (a *Server) startMessageConsumer(context *Context, consumer ddd.MessageConsumer) {
+func (a *Server) startMessageConsumer(context *Context, consumer ddd.MessageConsumer) error {
 	logServerInfo("starting %s context %s message consumer", context.name, consumer.Target())
 	target := consumer.Target()
 	if a.contexts[target] != nil {
