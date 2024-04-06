@@ -16,7 +16,7 @@ func ExtMsgConsumer() ddd.MessageConsumer {
 	//		Host:        "cow.rmq2.cloudamqp.com",
 	//		Port:        5672,
 	//		Username:    "domkxzfl",
-	//		Password:    "pAXyK5EOSI2RX-nJftcmUFjdrRbMa_5f",
+	//		Password:    "xxxxxxxxxxxxxxxxxxxxxxxx",
 	//		VirtualHost: "domkxzfl",
 	//		Exchange:    "external",
 	//		Queue:       "events",
