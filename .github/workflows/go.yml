@@ -33,7 +33,7 @@ jobs:
       run: echo "Coverage is $(go tool cover -func=coverage.out | grep 'total:' | awk '{print $3}' | sed 's/%//g')%"
 
     - name: Upload coverage report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: coverage-report
         path: coverage.html
