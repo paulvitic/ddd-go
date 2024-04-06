@@ -1,6 +1,3 @@
-# This workflow will build a golang project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
-
 name: Go
 
 on:
@@ -29,6 +26,10 @@ jobs:
 
     - name: Generate coverage report
       run: go tool cover -html=coverage.out -o coverage.html
+
+    - name: Check coverage
+      run: |
+        go tool cover -func=coverage.out | grep 'total:' | awk '{print $3}' | sed 's/%//g' | awk '{if($1 < 70.0) exit 1}'
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v2
