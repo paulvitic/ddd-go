@@ -1,9 +1,9 @@
 package mobile
 
 import (
-	ddd "github.com/paulvitic/ddd-go/application"
+	"github.com/paulvitic/ddd-go/context"
 )
 
-func Context() *ddd.Context {
-	return ddd.NewContext("mobile")
+func Context() *context.Context {
+	return context.NewContext(context.Configuration{Name: "mobile"})
 }

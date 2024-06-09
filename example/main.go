@@ -1,15 +1,16 @@
 package main
 
 import (
-	ddd "github.com/paulvitic/ddd-go/application"
+	"github.com/paulvitic/ddd-go/config"
 	"github.com/paulvitic/ddd-go/example/auth"
 	"github.com/paulvitic/ddd-go/example/hotel"
 	"github.com/paulvitic/ddd-go/example/mobile"
 	"github.com/paulvitic/ddd-go/example/payment"
+	"github.com/paulvitic/ddd-go/server"
 )
 
 func main() {
-	if err := ddd.NewServer(nil).
+	if err := server.NewServer(config.Properties[server.Configuration]()).
 		WithContext(hotel.Context()).
 		WithContext(auth.Context()).
 		WithContext(mobile.Context()).

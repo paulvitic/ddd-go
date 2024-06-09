@@ -1,62 +1,71 @@
-package application
+package context
 
 import (
 	"fmt"
 	"github.com/paulvitic/ddd-go"
 	"github.com/paulvitic/ddd-go/http"
 	"github.com/paulvitic/ddd-go/inMemory"
+	"log"
 )
 
+func contextLog(msg string, args ...interface{}) {
+	log.Printf(fmt.Sprintf(fmt.Sprintf("[info] Context: %s", msg), args...))
+}
+
+type Configuration struct {
+	Name string `json:"name"`
+}
+
 type Context struct {
-	name             string
+	Name             string
+	profile          string
 	eventBus         ddd.EventBus
 	commandBus       ddd.CommandBus
 	queryBus         ddd.QueryBus
-	eventPublisher   ddd.EventPublisher
-	messageConsumers map[string]ddd.MessageConsumer
-	queryEndpoints   map[string]*http.QueryEndpoint
-	commandEndpoints map[string]*http.CommandEndpoint
+	EventPublisher   ddd.EventPublisher
+	MessageConsumers map[string]ddd.MessageConsumer
+	QueryEndpoints   map[string]*http.QueryEndpoint
+	CommandEndpoints map[string]*http.CommandEndpoint
 }
 
-func NewContext(options interface{}) *Context {
+func NewContext(config interface{}) *Context {
 	queryBus := ddd.NewQueryBus()
 	commandBus := ddd.NewCommandBus()
 	eventBus := ddd.NewEventBus(commandBus)
 
-	//var err error
-	var name string
-	var eventPublisher ddd.EventPublisher
-
-	if options == nil {
-		// if no option is provided, assign default name to context
-		name = "default"
-		// and use in-memory event publisher
-		eventPublisher = inMemory.NewEventPublisher()
-
-	} else if contextName, ok := options.(string); ok {
-		// if argument is a string, assign it to context name
-		name = contextName
-		// and use in-memory event publisher
-		eventPublisher = inMemory.NewEventPublisher()
-
-	} else if config, ok := options.(Context); ok {
-		if config.name != "" && config.name != "default" {
-			name = config.name
-		} else {
-			name = "default"
-		}
-	}
-
-	return &Context{
-		name:             name,
-		eventBus:         eventBus,
-		commandBus:       commandBus,
+	context := &Context{
 		queryBus:         queryBus,
-		eventPublisher:   eventPublisher,
-		messageConsumers: make(map[string]ddd.MessageConsumer),
-		queryEndpoints:   make(map[string]*http.QueryEndpoint),
-		commandEndpoints: make(map[string]*http.CommandEndpoint),
+		commandBus:       commandBus,
+		eventBus:         eventBus,
+		MessageConsumers: make(map[string]ddd.MessageConsumer),
+		QueryEndpoints:   make(map[string]*http.QueryEndpoint),
+		CommandEndpoints: make(map[string]*http.CommandEndpoint),
 	}
+
+	if config != nil {
+		if ctxOptions, ok := config.(Configuration); ok {
+			context.configure(ctxOptions)
+		} else {
+			panic("Invalid config")
+		}
+
+	} else {
+		context.configure(Configuration{
+			Name: "default",
+		})
+	}
+
+	return context
+}
+
+func (c *Context) configure(options Configuration) {
+	if options.Name == "" {
+		c.Name = "default"
+	} else {
+		c.Name = options.Name
+	}
+
+	c.EventPublisher = inMemory.NewEventPublisher()
 }
 
 func (c *Context) RegisterPolicy(policy ddd.Policy) *Context {
@@ -81,7 +90,7 @@ func (c *Context) RegisterQueryService(service ddd.QueryService) *Context {
 }
 
 func (c *Context) RegisterQueryEndpoint(endpoint *http.QueryEndpoint) *Context {
-	if _, ok := c.queryEndpoints[endpoint.Path()]; ok {
+	if _, ok := c.QueryEndpoints[endpoint.Path()]; ok {
 		panic(fmt.Sprintf("Endpoint %s already registered", endpoint.Path()))
 	}
 
@@ -90,7 +99,7 @@ func (c *Context) RegisterQueryEndpoint(endpoint *http.QueryEndpoint) *Context {
 	}
 
 	endpoint.RegisterQueryBus(c.queryBus)
-	c.queryEndpoints[endpoint.Path()] = endpoint
+	c.QueryEndpoints[endpoint.Path()] = endpoint
 	return c
 }
 
@@ -103,7 +112,7 @@ func (c *Context) RegisterCommandService(service ddd.CommandService) *Context {
 }
 
 func (c *Context) RegisterCommandEndpoint(endpoint *http.CommandEndpoint) *Context {
-	if _, ok := c.commandEndpoints[endpoint.Path()]; ok {
+	if _, ok := c.CommandEndpoints[endpoint.Path()]; ok {
 		panic(fmt.Sprintf("Endpoint %s already registered", endpoint.Path()))
 	}
 	if endpoint.Methods() == nil {
@@ -111,20 +120,20 @@ func (c *Context) RegisterCommandEndpoint(endpoint *http.CommandEndpoint) *Conte
 	}
 
 	endpoint.RegisterCommandBus(c.commandBus)
-	c.commandEndpoints[endpoint.Path()] = endpoint
+	c.CommandEndpoints[endpoint.Path()] = endpoint
 	return c
 }
 
 func (c *Context) RegisterMessageConsumer(consumer ddd.MessageConsumer) *Context {
-	if _, ok := c.messageConsumers[consumer.Target()]; !ok {
+	if _, ok := c.MessageConsumers[consumer.Target()]; !ok {
 		consumer.SetEventBus(c.eventBus)
-		c.messageConsumers[consumer.Target()] = consumer
+		c.MessageConsumers[consumer.Target()] = consumer
 	}
 	return c
 }
 
 func (c *Context) Start() error {
-	//for _, consumer := range c.messageConsumers {
+	//for _, consumer := range c.MessageConsumers {
 	//	consumer.Start()
 	//}
 	return nil
