@@ -9,6 +9,7 @@ type EventProducer interface {
 	RegisterEvent(aggregateType string, aggregateID ID, payload any) EventProducer
 	Events() []Event
 	GetFirst() Event
+	ClearEvents()
 }
 
 type eventProducer struct {
@@ -55,4 +56,11 @@ func (ep *eventProducer) GetFirst() Event {
 	pop := ep.events[0]
 	ep.events = ep.events[1:]
 	return pop
+}
+
+func (ep *eventProducer) ClearEvents() {
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
+
+	ep.events = make([]Event, 0)
 }

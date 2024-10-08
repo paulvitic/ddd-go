@@ -1,8 +1,9 @@
 package go_ddd
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 type mockAggregate struct {
@@ -19,8 +20,8 @@ type mockEntity struct {
 
 func newMockEntity(id string, name string) *mockEntity {
 	return &mockEntity{
-		NewEntity(NewValue[string](id)),
-		name,
+		Entity: NewEntity(NewValue[string](id)),
+		name:   name,
 	}
 }
 
@@ -81,6 +82,22 @@ func TestAggregate_UpdateName(t *testing.T) {
 	expectedEventType := "github.com/paulvitic/ddd-go.nameUpdated"
 	assert.Equal(t, expectedEventType, event.Type(),
 		"Expected event.Payload type to be %s, but got %s", expectedEventType, event.Type())
+
+	assert.Equal(t, nameUpdated{Name: "CompanyB"}, event.Payload(),
+		"Expected event.Payload to be %v, but got %v", nameUpdated{Name: "CompanyB"}, event.Payload())
+
+	agg.ClearEvents()
+	assert.Equal(t, 0, len(agg.Events()),
+		"Expected events count to be 0, but got %d", len(agg.Events()))
+
+	agg.UpdateName("CompanyC")
+	domainEvents = agg.Events()
+	assert.Equal(t, 1, len(domainEvents),
+		"Expected events count to be 1, but got %d", len(domainEvents))
+
+	event = domainEvents[0]
+	assert.Equal(t, agg.ID(), event.AggregateID(),
+		"Expected event.AggregateID to be %s, but got %s", agg.ID(), event.AggregateID())
 
 	//println(event.AggregateID())
 	//println(event.ToJsonString())

@@ -10,20 +10,24 @@ type Aggregate interface {
 }
 
 type aggregate struct {
-	aggType string
 	Entity
 	EventProducer
+	aggType string
 }
 
 func (a *aggregate) AggregateType() string {
 	return a.aggType
 }
 
+func (a *aggregate) ClearEvents() {
+	a.EventProducer.ClearEvents()
+}
+
 // NewAggregate creates a new Aggregate instance
 func NewAggregate[T any](id ID, aggregateType T) Aggregate {
 	return &aggregate{
-		reflect.TypeOf(aggregateType).PkgPath() + "." + reflect.TypeOf(aggregateType).Name(),
-		NewEntity(id),
-		NewEventProducer(),
+		Entity:        NewEntity(id),
+		EventProducer: NewEventProducer(),
+		aggType:       reflect.TypeOf(aggregateType).PkgPath() + "." + reflect.TypeOf(aggregateType).Name(),
 	}
 }
