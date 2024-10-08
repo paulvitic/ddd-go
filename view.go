@@ -1,4 +1,4 @@
-package go_ddd
+package ddd
 
 // View is a read-only projection of the domain state.
 // It is only mutated by particular domain events that it subscribes to.

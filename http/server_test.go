@@ -36,11 +36,11 @@ func (m *mockEndpoint) WithQueryTranslator(translator QueryTranslator) Endpoint 
 	return nil
 }
 
-func (m *mockEndpoint) RegisterCommandBus(bus go_ddd.CommandBus) {
+func (m *mockEndpoint) RegisterCommandBus(bus ddd.CommandBus) {
 	return
 }
 
-func (m *mockEndpoint) RegisterQueryBus(bus go_ddd.QueryBus) {
+func (m *mockEndpoint) RegisterQueryBus(bus ddd.QueryBus) {
 	return
 }
 

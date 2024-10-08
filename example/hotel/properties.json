@@ -1,0 +1,10 @@
+{
+  "profile": "prod",
+  "port": "3001",
+  "rabbitMq": {
+    "url": "amqp://peof_rabbitmq_1:5672"
+  },
+  "mongoDb": {
+    "uri": "mongodb://organization:password@peof_mongo_1:27017"
+  }
+}

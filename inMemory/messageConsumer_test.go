@@ -35,20 +35,20 @@ func NewMockEventBus(t *testing.T) *MockEventBus {
 	}
 }
 
-func (m *MockEventBus) Handler() go_ddd.HandlerFunc { return nil }
+func (m *MockEventBus) Handler() ddd.HandlerFunc { return nil }
 
-func (m *MockEventBus) DispatchFrom(ctx context.Context, producer go_ddd.EventProducer) error {
+func (m *MockEventBus) DispatchFrom(ctx context.Context, producer ddd.EventProducer) error {
 	return nil
 }
 
-func (m *MockEventBus) Use(middleware go_ddd.MiddlewareFunc) { return }
+func (m *MockEventBus) Use(middleware ddd.MiddlewareFunc) { return }
 
-func (m *MockEventBus) RegisterView(view go_ddd.View) error { return nil }
+func (m *MockEventBus) RegisterView(view ddd.View) error { return nil }
 
-func (m *MockEventBus) RegisterPolicy(policy go_ddd.Policy) error { return nil }
+func (m *MockEventBus) RegisterPolicy(policy ddd.Policy) error { return nil }
 
 // ExpectDispatch adds an expectation for a call to Dispatch with specific arguments.
-func (m *MockEventBus) ExpectDispatch(ctx context.Context, event go_ddd.Event) {
+func (m *MockEventBus) ExpectDispatch(ctx context.Context, event ddd.Event) {
 	m.dispatchCalls = append(m.dispatchCalls, &funcCall{
 		aggregateType: event.AggregateType(),
 		aggregateID:   event.AggregateID().String(),
@@ -57,7 +57,7 @@ func (m *MockEventBus) ExpectDispatch(ctx context.Context, event go_ddd.Event) {
 }
 
 // Dispatch simulates the Dispatch function and verifies expectations.
-func (m *MockEventBus) Dispatch(ctx context.Context, event go_ddd.Event) error {
+func (m *MockEventBus) Dispatch(ctx context.Context, event ddd.Event) error {
 	// Check if a matching expectation exists
 	res := make([]*funcCall, 0)
 	for _, call := range m.dispatchCalls {
@@ -94,10 +94,10 @@ type TestPolicy struct {
 	subscribedTo []string
 }
 
-func (p *TestPolicy) When(event go_ddd.Event) (go_ddd.Command, error) {
+func (p *TestPolicy) When(event ddd.Event) (ddd.Command, error) {
 	switch event.Type() {
 	case "github.com/paulvitic/ddd-go/inMemory.testEventPayload":
-		return go_ddd.NewCommand(testCommand{Name: "value"}), nil
+		return ddd.NewCommand(testCommand{Name: "value"}), nil
 	default:
 		return nil, errors.New("unknown event type")
 	}
@@ -107,8 +107,8 @@ func (p *TestPolicy) SubscribedTo() []string {
 	return p.subscribedTo
 }
 
-func translator(from []byte) (go_ddd.Event, error) {
-	event, err := go_ddd.EventFromJsonString(string(from))
+func translator(from []byte) (ddd.Event, error) {
+	event, err := ddd.EventFromJsonString(string(from))
 	if err != nil {
 		return nil, err
 	}
@@ -121,12 +121,12 @@ func TestNewInMemoryMessageConsumer(t *testing.T) {
 		close(queue)
 	})
 	// Test successful creation
-	consumer := MessageConsumer(go_ddd.NewMessageConsumer("target", translator), &queue)
+	consumer := MessageConsumer(ddd.NewMessageConsumer("target", translator), &queue)
 	assert.NotNil(t, consumer)
 
 	// Test failure with nil arguments
 	assert.Panics(t, func() {
-		MessageConsumer(go_ddd.NewMessageConsumer("target", translator), nil)
+		MessageConsumer(ddd.NewMessageConsumer("target", translator), nil)
 	})
 }
 
@@ -138,15 +138,15 @@ func TestStart(t *testing.T) {
 		close(queue)
 	})
 
-	testEvent := go_ddd.NewEventProducer().
-		RegisterEvent("aggType", go_ddd.NewID("ID123"), testEventPayload{Name: "value"}).
+	testEvent := ddd.NewEventProducer().
+		RegisterEvent("aggType", ddd.NewID("ID123"), testEventPayload{Name: "value"}).
 		GetFirst()
 
 	// Create a mock for EventBus with expectations for Dispatch calls
 	eventBusMock := NewMockEventBus(t)
 	eventBusMock.ExpectDispatch(ctx, testEvent) // Assuming a MockEventBus implementation exists
 
-	consumer := MessageConsumer(go_ddd.NewMessageConsumer("target", translator), &queue)
+	consumer := MessageConsumer(ddd.NewMessageConsumer("target", translator), &queue)
 	consumer.SetEventBus(eventBusMock)
 
 	err := consumer.Start()
@@ -189,23 +189,23 @@ func TestInMemoryMessageConsumer(t *testing.T) {
 	wg.Add(2)
 	calls := make([]string, 0)
 
-	middleware := func(next go_ddd.HandlerFunc) go_ddd.HandlerFunc {
-		return func(ctx context.Context, msg go_ddd.Payload) (interface{}, error) {
+	middleware := func(next ddd.HandlerFunc) ddd.HandlerFunc {
+		return func(ctx context.Context, msg ddd.Payload) (interface{}, error) {
 			wg.Done()
 			calls = append(calls, "middleware")
 			return next(ctx, msg)
 		}
 	}
 
-	testCommandBus := go_ddd.NewCommandBus()
-	handler := func(context.Context, go_ddd.Command) error {
+	testCommandBus := ddd.NewCommandBus()
+	handler := func(context.Context, ddd.Command) error {
 		return nil
 	}
-	service := go_ddd.NewCommandService(handler, testCommand{})
+	service := ddd.NewCommandService(handler, testCommand{})
 	err := testCommandBus.RegisterService(service)
 	assert.NoError(t, err)
 
-	testEventBus := go_ddd.NewEventBus(testCommandBus)
+	testEventBus := ddd.NewEventBus(testCommandBus)
 	testEventBus.Use(middleware)
 
 	err = testEventBus.RegisterPolicy(&TestPolicy{
@@ -213,7 +213,7 @@ func TestInMemoryMessageConsumer(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	consumer := MessageConsumer(go_ddd.NewMessageConsumer("target", translator), &msgQueue)
+	consumer := MessageConsumer(ddd.NewMessageConsumer("target", translator), &msgQueue)
 	consumer.SetEventBus(testEventBus)
 	err = consumer.Start()
 	assert.NoError(t, err)
@@ -222,8 +222,8 @@ func TestInMemoryMessageConsumer(t *testing.T) {
 		close(msgQueue)
 	})
 
-	testEvent := go_ddd.NewEventProducer().
-		RegisterEvent("aggType", go_ddd.NewID("ID123"), testEventPayload{Name: "value"}).
+	testEvent := ddd.NewEventProducer().
+		RegisterEvent("aggType", ddd.NewID("ID123"), testEventPayload{Name: "value"}).
 		GetFirst()
 
 	jsonString, err := testEvent.ToJsonString()

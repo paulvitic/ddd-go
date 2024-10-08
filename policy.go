@@ -1,4 +1,4 @@
-package go_ddd
+package ddd
 
 // Policy receives a domain event and returns a command.
 // It is used to implement domain logic that can be defined as

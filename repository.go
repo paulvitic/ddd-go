@@ -1,4 +1,4 @@
-package go_ddd
+package ddd
 
 type Repository[T interface{}] interface {
 	// Save persists an aggregate

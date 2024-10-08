@@ -36,7 +36,7 @@ func (p *messageConsumer) Start() error {
 	failOnError(err, "Failed to declare queue")
 	p.queue = &queue
 
-	msgs, err := p.channel.Consume(
+	messages, err := p.channel.Consume(
 		p.queue.Name, // queue
 		"",           // consumer
 		true,         // auto-ack
@@ -52,7 +52,7 @@ func (p *messageConsumer) Start() error {
 	var forever chan struct{}
 
 	go func() {
-		for msg := range msgs {
+		for msg := range messages {
 			log.Printf("Received a message: %s", msg.Body)
 			err := p.MessageConsumer.ProcessMessage(msg.Body)
 			if err != nil {

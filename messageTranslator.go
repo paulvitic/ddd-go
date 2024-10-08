@@ -1,3 +1,3 @@
-package go_ddd
+package ddd
 
 type MessageTranslator func(from []byte) (Event, error)

@@ -6,7 +6,7 @@ import (
 )
 
 type guests struct {
-	go_ddd.View
+	ddd.View
 	// In-memory store
 	store map[int]*domain.Guest
 }
@@ -28,6 +28,6 @@ func (g *guests) GuestInRoom(id int) *domain.Guest {
 	return g.store[id]
 }
 
-func (g *guests) MutateWhen(event go_ddd.Event) error {
+func (g *guests) MutateWhen(event ddd.Event) error {
 	return g.View.MutateWhen(event)
 }

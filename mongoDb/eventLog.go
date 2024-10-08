@@ -54,7 +54,7 @@ func NewEventLog(uri string) (eventLog *EventLog) {
 }
 
 // Append Appends to events of a company
-func (s *EventLog) Append(events []go_ddd.Event, aggregateType string) (err error) {
+func (s *EventLog) Append(events []ddd.Event, aggregateType string) (err error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -115,7 +115,7 @@ func (s *EventLog) EventsOf(aggregateId string, aggregateType string) (err error
 	return
 }
 
-func toEventLog(event go_ddd.Event) logEntry {
+func toEventLog(event ddd.Event) logEntry {
 	logEntry := logEntry{
 		Event:       event,
 		AggregateId: event.AggregateID().String(),
@@ -124,7 +124,7 @@ func toEventLog(event go_ddd.Event) logEntry {
 	return logEntry
 }
 
-func toEventLogs(events []go_ddd.Event) []interface{} {
+func toEventLogs(events []ddd.Event) []interface{} {
 	logs := make([]interface{}, len(events))
 	for i, v := range events {
 		logs[i] = toEventLog(v)

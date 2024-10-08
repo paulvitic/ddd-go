@@ -6,17 +6,10 @@ import (
 	"net/http"
 )
 
-type guestsEndpoint struct {
-	dddhttp.Endpoint
-}
-
-func guestsQueryTranslator(from *http.Request) (go_ddd.Query, error) {
+func guestsQueryTranslator(from *http.Request) (ddd.Query, error) {
 	return nil, nil
 }
 
-func GuestsEndpoint() dddhttp.Endpoint {
-	return &guestsEndpoint{
-		Endpoint: dddhttp.NewEndpoint("guests").
-			WithQueryTranslator(guestsQueryTranslator),
-	}
+func GuestsEndpoint() *dddhttp.QueryEndpoint {
+	return dddhttp.NewQueryEndpoint("guests", []string{}, guestsQueryTranslator)
 }
