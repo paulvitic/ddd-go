@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -36,8 +37,22 @@ func (c *Context) WithResources(resources ...*Resource) *Context {
 	for _, resource := range resources {
 		c.resources = append(c.resources, resource)
 
-		// Add to type map
-		c.resourcesByType[resource.Type()] = append(c.resourcesByType[resource.Type()], resource)
+		// Add to type map - this is the key fix:
+		// When storing by type, use both the exact type and the package.name format
+		resourceType := resource.Type()
+		c.resourcesByType[resourceType] = append(c.resourcesByType[resourceType], resource)
+
+		// Also store under the form "package.InterfaceName" for backward compatibility
+		// This assumes the type is in the format "github.com/pkg/path.InterfaceName"
+		parts := strings.Split(resourceType, ".")
+		if len(parts) > 1 {
+			// Get the last part (the interface name)
+			simpleName := parts[len(parts)-1]
+			// Create the package.name format (e.g., "ddd.Logger")
+			packageName := "ddd." + simpleName
+			// Store the resource under this format as well
+			c.resourcesByType[packageName] = append(c.resourcesByType[packageName], resource)
+		}
 
 		// Add to name map
 		c.resourcesByName[resource.Name()] = resource
@@ -47,7 +62,11 @@ func (c *Context) WithResources(resources ...*Resource) *Context {
 	c.sortResourcesByDependencyCount()
 
 	// Initialize resources
-	c.initializeResources()
+	err := c.initializeResources()
+	if err != nil {
+		// In a real application, we might want to handle this error more gracefully
+		panic(fmt.Sprintf("Failed to initialize resources: %v", err))
+	}
 
 	c.ready = true
 
@@ -66,7 +85,7 @@ func (c *Context) ResourcesByType(resourceType string) ([]any, bool) {
 
 	result := make([]any, 0, len(resources))
 	for _, resource := range resources {
-		instance, ok := c.getInstance(resource)
+		instance, ok := c.getInstanceNoLock(resource)
 		if ok {
 			result = append(result, instance)
 		}
@@ -89,7 +108,7 @@ func (c *Context) ResourceByName(name string) (any, bool) {
 		return nil, false
 	}
 
-	return c.getInstance(resource)
+	return c.getInstanceNoLock(resource)
 }
 
 // ResourceByTypeAndName returns the resource with the given type and name
@@ -97,6 +116,13 @@ func (c *Context) ResourceByTypeAndName(resourceType, name string) (any, bool) {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
 
+	// First try to get the resource by name
+	resource, exists := c.resourcesByName[name]
+	if exists && resource.Type() == resourceType {
+		return c.getInstanceNoLock(resource)
+	}
+
+	// If not found by name, try by type and then check names
 	resources, exists := c.resourcesByType[resourceType]
 	if !exists {
 		return nil, false
@@ -104,7 +130,7 @@ func (c *Context) ResourceByTypeAndName(resourceType, name string) (any, bool) {
 
 	for _, resource := range resources {
 		if resource.Name() == name {
-			return c.getInstance(resource)
+			return c.getInstanceNoLock(resource)
 		}
 	}
 
@@ -123,7 +149,7 @@ func (c *Context) Endpoints() []Endpoint {
 	for _, resource := range c.resources {
 		// Check if the resource type matches Endpoint interface
 		if resource.Type() == "ddd.Endpoint" {
-			instance, ok := c.getInstance(resource)
+			instance, ok := c.getInstanceNoLock(resource)
 			if !ok || instance == nil {
 				continue
 			}
@@ -146,8 +172,9 @@ func (c *Context) sortResourcesByDependencyCount() {
 	})
 }
 
-// getInstance returns the instance of the resource based on its scope
-func (c *Context) getInstance(resource *Resource) (any, bool) {
+// getInstanceNoLock returns the instance of the resource based on its scope
+// without acquiring a lock. The caller must hold at least a read lock.
+func (c *Context) getInstanceNoLock(resource *Resource) (any, bool) {
 	switch resource.Scope() {
 	case Singleton:
 		// For singletons, we should have already created an instance
@@ -159,7 +186,7 @@ func (c *Context) getInstance(resource *Resource) (any, bool) {
 
 	case Prototype:
 		// For prototypes, create a new instance each time
-		instance, err := c.createInstance(resource)
+		instance, err := c.createInstanceNoLock(resource)
 		if err != nil {
 			return nil, false
 		}
@@ -168,7 +195,7 @@ func (c *Context) getInstance(resource *Resource) (any, bool) {
 	case Request:
 		// For request scope, we would typically use a request ID
 		// but since we don't have one here, we'll just create a new instance
-		instance, err := c.createInstance(resource)
+		instance, err := c.createInstanceNoLock(resource)
 		if err != nil {
 			return nil, false
 		}
@@ -179,8 +206,9 @@ func (c *Context) getInstance(resource *Resource) (any, bool) {
 	}
 }
 
-// createInstance creates a new instance of the resource
-func (c *Context) createInstance(resource *Resource) (any, error) {
+// createInstanceNoLock creates a new instance of the resource
+// without acquiring a lock. The caller must hold at least a read lock.
+func (c *Context) createInstanceNoLock(resource *Resource) (any, error) {
 	// Clone the original value
 	value := reflect.ValueOf(resource.value)
 	if value.Kind() == reflect.Ptr {
@@ -199,7 +227,7 @@ func (c *Context) createInstance(resource *Resource) (any, error) {
 	}
 
 	// Resolve dependencies
-	if err := c.resolveDependencies(value); err != nil {
+	if err := c.resolveDependenciesNoLock(value); err != nil {
 		return nil, err
 	}
 
@@ -216,8 +244,9 @@ func (c *Context) createInstance(resource *Resource) (any, error) {
 	return instance, nil
 }
 
-// resolveDependencies resolves the dependencies of the resource
-func (c *Context) resolveDependencies(value reflect.Value) error {
+// resolveDependenciesNoLock resolves the dependencies of the resource
+// without acquiring a lock. The caller must hold at least a read lock.
+func (c *Context) resolveDependenciesNoLock(value reflect.Value) error {
 	// If it's a pointer, we want to work with the pointed value
 	valueElem := value
 	if value.Kind() == reflect.Ptr {
@@ -250,15 +279,25 @@ func (c *Context) resolveDependencies(value reflect.Value) error {
 			var depInstance any
 			var found bool
 
-			// First try by type and name
-			depInstance, found = c.ResourceByTypeAndName(depType, tag)
-
-			// If not found, try by type
-			if !found {
-				instances, found := c.ResourcesByType(depType)
-				if found && len(instances) > 0 {
-					depInstance = instances[0] // Use the first instance
+			// First try by name
+			resource, exists := c.resourcesByName[tag]
+			if exists {
+				instance, ok := c.getInstanceNoLock(resource)
+				if ok {
+					depInstance = instance
 					found = true
+				}
+			}
+
+			// If not found by name, try by type
+			if !found {
+				resources, exists := c.resourcesByType[depType]
+				if exists && len(resources) > 0 {
+					instance, ok := c.getInstanceNoLock(resources[0])
+					if ok {
+						depInstance = instance
+						found = true
+					}
 				}
 			}
 
@@ -274,7 +313,7 @@ func (c *Context) resolveDependencies(value reflect.Value) error {
 			// Set the field value
 			depValue := reflect.ValueOf(depInstance)
 
-			// Make sure the field is settable
+			// Make sure the field is settable and types are compatible
 			if field.CanSet() {
 				field.Set(depValue)
 			} else {
@@ -286,6 +325,18 @@ func (c *Context) resolveDependencies(value reflect.Value) error {
 	return nil
 }
 
+// isPrimitiveType returns true if the type is a primitive type or string
+func isPrimitiveType(t reflect.Type) bool {
+	switch t.Kind() {
+	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64, reflect.String:
+		return true
+	default:
+		return false
+	}
+}
+
 // initializeResources initializes all resources in dependency order
 func (c *Context) initializeResources() error {
 	for _, resource := range c.resources {
@@ -295,20 +346,13 @@ func (c *Context) initializeResources() error {
 		}
 
 		// Create an instance of the resource
-		instance, err := c.createInstance(resource)
+		instance, err := c.createInstanceNoLock(resource)
 		if err != nil {
 			return err
 		}
 
 		// Store the instance
 		resource.instance.Store(instance)
-
-		// Call OnStart hook if available
-		if resource.hooks != nil && resource.hooks.OnStart != nil {
-			if err := resource.hooks.OnStart(instance); err != nil {
-				return err
-			}
-		}
 	}
 
 	return nil

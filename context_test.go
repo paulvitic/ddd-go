@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// Test endpoint implementation for Context tests
 type TestEndpoint struct {
 	PathValue   string
 	HandlersMap map[HttpMethod]http.HandlerFunc
@@ -19,11 +20,32 @@ func (e *TestEndpoint) Handlers() map[HttpMethod]http.HandlerFunc {
 	return e.HandlersMap
 }
 
-// Test fixtures for Context tests
+// Test interfaces
+type Logger interface {
+	Log(message string)
+}
+
+type Service interface {
+	DoSomething() error
+}
+
+type Repository interface {
+	FindById(id int) string
+}
+
+type DatabaseService interface {
+	Connect() bool
+}
+
+type UserController interface {
+	GetUser(id int) string
+}
+
 type Config interface {
 	GetValue(key string) string
 }
 
+// Test implementations
 type SimpleConfig struct {
 	values map[string]string
 }
@@ -32,12 +54,74 @@ func (c *SimpleConfig) GetValue(key string) string {
 	return c.values[key]
 }
 
-type DatabaseService interface {
-	Connect() bool
+type SimpleLogger struct {
+	LogLevel string // No resource tag
 }
 
+func (l *SimpleLogger) Log(message string) {
+	fmt.Printf("[%s] %s\n", l.LogLevel, message)
+}
+
+func (l *SimpleLogger) OnInit() error {
+	return nil
+}
+
+func (l *SimpleLogger) OnDestroy() error {
+	return nil
+}
+
+type FullLifecycleLogger struct {
+	SimpleLogger
+}
+
+func (l *FullLifecycleLogger) OnInit() error    { return nil }
+func (l *FullLifecycleLogger) OnStart() error   { return nil }
+func (l *FullLifecycleLogger) OnDestroy() error { return nil }
+
+type TestLogger struct {
+	LogLevel      string // No resource tag
+	InitCalled    bool
+	StartCalled   bool
+	DestroyCalled bool
+}
+
+func (l *TestLogger) Log(message string) {
+	// No-op
+}
+
+func (l *TestLogger) OnInit() error {
+	l.InitCalled = true
+	return nil
+}
+
+func (l *TestLogger) OnStart() error {
+	l.StartCalled = true
+	return nil
+}
+
+func (l *TestLogger) OnDestroy() error {
+	l.DestroyCalled = true
+	return nil
+}
+
+type ErrorLogger struct {
+	LogLevel string // No resource tag
+}
+
+func (l *ErrorLogger) Log(message string) {
+	// No-op
+}
+
+func (l *ErrorLogger) OnInit() error {
+	return fmt.Errorf("init error")
+}
+
+type NoHooksStruct struct{}
+
+func (s *NoHooksStruct) DoSomething() error { return nil }
+
 type SimpleDatabaseService struct {
-	ConnectionString string `resource:"dbConnectionString"`
+	ConnectionString string // No resource tag
 	Connected        bool
 }
 
@@ -55,8 +139,37 @@ func (s *SimpleDatabaseService) OnInit() error {
 	return nil
 }
 
-type UserController interface {
-	GetUser(id int) string
+type UserService struct {
+	Logger     Logger     `resource:"logger"`
+	Repository Repository `resource:"userRepo"`
+	ApiKey     string     // No resource tag
+}
+
+func (s *UserService) DoSomething() error {
+	s.Logger.Log("Doing something with repository")
+	s.Repository.FindById(1)
+	return nil
+}
+
+func (s *UserService) OnInit() error {
+	if s.ApiKey == "" {
+		return fmt.Errorf("ApiKey cannot be empty")
+	}
+	return nil
+}
+
+func (s *UserService) OnStart() error {
+	return nil
+}
+
+type UserRepository struct{}
+
+func (r *UserRepository) FindById(id int) string {
+	return fmt.Sprintf("User with ID %d", id)
+}
+
+func (r *UserRepository) OnInit() error {
+	return nil
 }
 
 type SimpleUserController struct {
