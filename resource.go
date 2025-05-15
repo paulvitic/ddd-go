@@ -66,12 +66,14 @@ func NewResource[I any](value any, options ...any) *Resource {
 	// Verify that the value implements the interface
 	// Check both the value type AND pointer type for implementation
 	valueImplements := valueType.Implements(interfaceType)
-	pointerImplements := reflect.PtrTo(valueType).Implements(interfaceType)
+	// Use PointerTo instead of PtrTo (deprecated)
+	pointerImplements := reflect.PointerTo(valueType).Implements(interfaceType)
 
 	if !valueImplements && !pointerImplements {
 		panic(fmt.Sprintf("value of type %v does not implement the specified interface %v", valueType, interfaceType))
 	}
 
+	// Use spread operator to fix the options passing issue
 	resourceName, scope := processOptions(valueType, options...)
 
 	// Parse dependencies from struct tags
