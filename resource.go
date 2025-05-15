@@ -64,7 +64,9 @@ func NewResource[I any](value any, options ...any) *Resource {
 	}
 
 	// Verify that the value implements the interface
-	if !valueType.Implements(interfaceType) {
+	// FIXED: Check both pointer and value types
+	implementsInterface := valueType.Implements(interfaceType) || reflect.PtrTo(valueType).Implements(interfaceType)
+	if !implementsInterface {
 		panic("value does not implement the specified interface")
 	}
 
@@ -87,6 +89,10 @@ func NewResource[I any](value any, options ...any) *Resource {
 
 func (r *Resource) Name() string {
 	return r.name
+}
+
+func (r *Resource) Type() string {
+	return r.resourceType
 }
 
 func (r *Resource) Scope() Scope {
@@ -173,7 +179,17 @@ func getLifecycleHooks(value any, valueType reflect.Type) *LifecycleHooks[any] {
 	// Check for OnInit method
 	if onInit, exists := methodType.MethodByName("OnInit"); exists {
 		hooks.OnInit = func(a any) error {
-			results := onInit.Func.Call([]reflect.Value{valueValue})
+			// We need to use the actual instance, not valueValue
+			instanceValue := reflect.ValueOf(a)
+
+			// If it's not a pointer but the method has a pointer receiver, wrap it
+			if instanceValue.Kind() != reflect.Ptr && onInit.Type.In(0).Kind() == reflect.Ptr {
+				newInstance := reflect.New(instanceValue.Type())
+				newInstance.Elem().Set(instanceValue)
+				instanceValue = newInstance
+			}
+
+			results := onInit.Func.Call([]reflect.Value{instanceValue})
 			if len(results) > 0 && !results[0].IsNil() {
 				return results[0].Interface().(error)
 			}
@@ -184,7 +200,17 @@ func getLifecycleHooks(value any, valueType reflect.Type) *LifecycleHooks[any] {
 	// Check for OnStart method
 	if onStart, exists := methodType.MethodByName("OnStart"); exists {
 		hooks.OnStart = func(a any) error {
-			results := onStart.Func.Call([]reflect.Value{valueValue})
+			// We need to use the actual instance, not valueValue
+			instanceValue := reflect.ValueOf(a)
+
+			// If it's not a pointer but the method has a pointer receiver, wrap it
+			if instanceValue.Kind() != reflect.Ptr && onStart.Type.In(0).Kind() == reflect.Ptr {
+				newInstance := reflect.New(instanceValue.Type())
+				newInstance.Elem().Set(instanceValue)
+				instanceValue = newInstance
+			}
+
+			results := onStart.Func.Call([]reflect.Value{instanceValue})
 			if len(results) > 0 && !results[0].IsNil() {
 				return results[0].Interface().(error)
 			}
@@ -195,7 +221,17 @@ func getLifecycleHooks(value any, valueType reflect.Type) *LifecycleHooks[any] {
 	// Check for OnDestroy method
 	if onDestroy, exists := methodType.MethodByName("OnDestroy"); exists {
 		hooks.OnDestroy = func(a any) error {
-			results := onDestroy.Func.Call([]reflect.Value{valueValue})
+			// We need to use the actual instance, not valueValue
+			instanceValue := reflect.ValueOf(a)
+
+			// If it's not a pointer but the method has a pointer receiver, wrap it
+			if instanceValue.Kind() != reflect.Ptr && onDestroy.Type.In(0).Kind() == reflect.Ptr {
+				newInstance := reflect.New(instanceValue.Type())
+				newInstance.Elem().Set(instanceValue)
+				instanceValue = newInstance
+			}
+
+			results := onDestroy.Func.Call([]reflect.Value{instanceValue})
 			if len(results) > 0 && !results[0].IsNil() {
 				return results[0].Interface().(error)
 			}
