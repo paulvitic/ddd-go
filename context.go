@@ -296,7 +296,7 @@ func (c *Context) construct(info *Resource) (any, error) {
 
 	instance := results[0].Interface()
 
-	if hooks, ok := info.hooks.(ResourceLifecycleHooks[any]); ok {
+	if hooks, ok := info.hooks.(LifecycleHooks[any]); ok {
 		if hooks.OnInit != nil {
 			if err := hooks.OnInit(instance); err != nil {
 				return nil, err
@@ -369,7 +369,7 @@ func (c *Context) Destroy() error {
 
 	for _, implementations := range c.dependencies {
 		for _, info := range implementations {
-			if hooks, ok := info.hooks.(ResourceLifecycleHooks[any]); ok {
+			if hooks, ok := info.hooks.(LifecycleHooks[any]); ok {
 				if hooks.OnDestroy != nil {
 					instance := info.instance.Load()
 					if instance != nil {
