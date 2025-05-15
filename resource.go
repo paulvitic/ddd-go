@@ -66,17 +66,14 @@ func NewResource[I any](value any, options ...any) *Resource {
 	// Verify that the value implements the interface
 	// Check both the value type AND pointer type for implementation
 	valueImplements := valueType.Implements(interfaceType)
-	// Use PointerTo instead of PtrTo (deprecated)
 	pointerImplements := reflect.PointerTo(valueType).Implements(interfaceType)
 
 	if !valueImplements && !pointerImplements {
 		panic(fmt.Sprintf("value of type %v does not implement the specified interface %v", valueType, interfaceType))
 	}
 
-	// Use spread operator to fix the options passing issue
 	resourceName, scope := processOptions(valueType, options...)
 
-	// Parse dependencies from struct tags
 	dependencies := parseDependencies(valueType)
 
 	lifecycleHooks := getLifecycleHooks(value, valueType)
@@ -113,7 +110,7 @@ func (r *Resource) LifecycleHooks() *LifecycleHooks[any] {
 
 func parseDependencies(valueType reflect.Type) []Dependency {
 	var dependencies []Dependency
-	for i := 0; i < valueType.NumField(); i++ {
+	for i := range valueType.NumField() {
 		field := valueType.Field(i)
 		fieldName := toCamelCase(field.Name)
 		tag := field.Tag.Get(ResourceTag)

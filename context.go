@@ -9,21 +9,21 @@ import (
 
 // Context represents the application context which manages resources
 type Context struct {
-	name          string
-	resources     []*Resource
-	resourcesMap  map[string][]*Resource // map of resource type to resources
-	resourcesByID map[string]*Resource   // map of resource name to resource
-	mutex         sync.RWMutex
-	ready         bool
+	name            string
+	resources       []*Resource
+	resourcesByType map[string][]*Resource // map of resource type to resources
+	resourcesByName map[string]*Resource   // map of resource name to resource
+	mutex           sync.RWMutex
+	ready           bool
 }
 
 // NewContext creates a new application context with the given name
 func NewContext(name string) *Context {
 	return &Context{
-		name:          name,
-		resources:     make([]*Resource, 0),
-		resourcesMap:  make(map[string][]*Resource),
-		resourcesByID: make(map[string]*Resource),
+		name:            name,
+		resources:       make([]*Resource, 0),
+		resourcesByType: make(map[string][]*Resource),
+		resourcesByName: make(map[string]*Resource),
 	}
 }
 
@@ -37,10 +37,10 @@ func (c *Context) WithResources(resources ...*Resource) *Context {
 		c.resources = append(c.resources, resource)
 
 		// Add to type map
-		c.resourcesMap[resource.Type()] = append(c.resourcesMap[resource.Type()], resource)
+		c.resourcesByType[resource.Type()] = append(c.resourcesByType[resource.Type()], resource)
 
 		// Add to name map
-		c.resourcesByID[resource.Name()] = resource
+		c.resourcesByName[resource.Name()] = resource
 	}
 
 	// Sort resources by dependency count
@@ -59,7 +59,7 @@ func (c *Context) ResourcesByType(resourceType string) ([]any, bool) {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
 
-	resources, exists := c.resourcesMap[resourceType]
+	resources, exists := c.resourcesByType[resourceType]
 	if !exists || len(resources) == 0 {
 		return nil, false
 	}
@@ -84,7 +84,7 @@ func (c *Context) ResourceByName(name string) (any, bool) {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
 
-	resource, exists := c.resourcesByID[name]
+	resource, exists := c.resourcesByName[name]
 	if !exists {
 		return nil, false
 	}
@@ -97,7 +97,7 @@ func (c *Context) ResourceByTypeAndName(resourceType, name string) (any, bool) {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
 
-	resources, exists := c.resourcesMap[resourceType]
+	resources, exists := c.resourcesByType[resourceType]
 	if !exists {
 		return nil, false
 	}
