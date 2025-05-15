@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"sort"
 	"sync"
-	"unicode"
 )
 
 type Context struct {
@@ -160,7 +159,7 @@ func (c *Context) createInstance(resource *Resource) any {
 	return instance
 }
 
-func (c *Container) Register(constructor any, options ...any) error {
+func (c *Context) Register(constructor any, options ...any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -177,10 +176,10 @@ func (c *Container) Register(constructor any, options ...any) error {
 	name, scope, hooks := c.processOptions(typ, options...)
 
 	if _, exists := c.dependencies[typ]; !exists {
-		c.dependencies[typ] = make(map[string]*dependencyInfo)
+		c.dependencies[typ] = make(map[string]*Resource)
 	}
 
-	c.dependencies[typ][name] = &dependencyInfo{
+	c.dependencies[typ][name] = &Resource{
 		constructor:  reflect.ValueOf(constructor),
 		scope:        scope,
 		hooks:        hooks,
@@ -212,7 +211,7 @@ func (c *Context) Resolve(typ reflect.Type, options ...any) (any, error) {
 	return c.resolveDependency(info)
 }
 
-func (c *Container) getResolveName(options ...any) string {
+func (c *Context) getResolveName(options ...any) string {
 	for _, option := range options {
 		if n, ok := option.(string); ok {
 			return n
@@ -221,7 +220,7 @@ func (c *Container) getResolveName(options ...any) string {
 	return ""
 }
 
-func (c *Container) getDependencyInfo(typ reflect.Type, name string) (*dependencyInfo, error) {
+func (c *Context) getDependencyInfo(typ reflect.Type, name string) (*Resource, error) {
 	implementations, exists := c.dependencies[typ]
 	if !exists {
 		return nil, fmt.Errorf("no dependency registered for type %v", typ)
@@ -239,7 +238,7 @@ func (c *Container) getDependencyInfo(typ reflect.Type, name string) (*dependenc
 	return info, nil
 }
 
-func (c *Container) resolveDependency(info *dependencyInfo) (any, error) {
+func (c *Context) resolveDependency(info *Resource) (any, error) {
 	switch info.scope {
 	case Singleton:
 		return c.resolveSingleton(info)
@@ -252,7 +251,7 @@ func (c *Container) resolveDependency(info *dependencyInfo) (any, error) {
 	}
 }
 
-func (c *Container) resolveSingleton(info *dependencyInfo) (any, error) {
+func (c *Context) resolveSingleton(info *Resource) (any, error) {
 	var err error
 	info.initOnce.Do(func() {
 		var instance any
@@ -269,7 +268,7 @@ func (c *Container) resolveSingleton(info *dependencyInfo) (any, error) {
 	return info.instance.Load(), nil
 }
 
-func (c *Container) resolveRequest(info *dependencyInfo) (any, error) {
+func (c *Context) resolveRequest(info *Resource) (any, error) {
 	key := getGoroutineID()
 	if instance, ok := info.instancePool.Load(key); ok {
 		return instance, nil
@@ -284,7 +283,7 @@ func (c *Container) resolveRequest(info *dependencyInfo) (any, error) {
 	return instance, nil
 }
 
-func (c *Container) construct(info *dependencyInfo) (any, error) {
+func (c *Context) construct(info *Resource) (any, error) {
 	params, err := c.resolveConstructorParams(info.constructor.Type())
 	if err != nil {
 		return nil, err
@@ -297,7 +296,7 @@ func (c *Container) construct(info *dependencyInfo) (any, error) {
 
 	instance := results[0].Interface()
 
-	if hooks, ok := info.hooks.(LifecycleHooks[any]); ok {
+	if hooks, ok := info.hooks.(ResourceLifecycleHooks[any]); ok {
 		if hooks.OnInit != nil {
 			if err := hooks.OnInit(instance); err != nil {
 				return nil, err
@@ -313,7 +312,7 @@ func (c *Container) construct(info *dependencyInfo) (any, error) {
 	return instance, nil
 }
 
-func (c *Container) resolveConstructorParams(constructorType reflect.Type) ([]reflect.Value, error) {
+func (c *Context) resolveConstructorParams(constructorType reflect.Type) ([]reflect.Value, error) {
 	params := make([]reflect.Value, constructorType.NumIn())
 	for i := 0; i < constructorType.NumIn(); i++ {
 		paramType := constructorType.In(i)
@@ -327,7 +326,7 @@ func (c *Container) resolveConstructorParams(constructorType reflect.Type) ([]re
 }
 
 // AutoWire automatically injects dependencies into the fields of the given struct
-func (c *Container) AutoWire(target any) error {
+func (c *Context) AutoWire(target any) error {
 	v := reflect.ValueOf(target)
 	if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Struct {
 		return fmt.Errorf("target must be a pointer to a struct")
@@ -364,13 +363,13 @@ func (c *Container) AutoWire(target any) error {
 	return nil
 }
 
-func (c *Container) Destroy() error {
+func (c *Context) Destroy() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	for _, implementations := range c.dependencies {
 		for _, info := range implementations {
-			if hooks, ok := info.hooks.(LifecycleHooks[any]); ok {
+			if hooks, ok := info.hooks.(ResourceLifecycleHooks[any]); ok {
 				if hooks.OnDestroy != nil {
 					instance := info.instance.Load()
 					if instance != nil {
@@ -386,7 +385,7 @@ func (c *Container) Destroy() error {
 }
 
 // ClearRequestScoped clears all request-scoped dependencies
-func (c *Container) ClearRequestScoped() {
+func (c *Context) ClearRequestScoped() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -399,86 +398,17 @@ func (c *Container) ClearRequestScoped() {
 	}
 }
 
-// Helper functions
-
-func toCamelCase(s string) string {
-	if s == "" {
-		return s
-	}
-	runes := []rune(s)
-	runes[0] = unicode.ToLower(runes[0])
-	return string(runes)
-}
-
-func getDefaultName(t reflect.Type) string {
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-	return toCamelCase(t.Name())
-}
-
 func getGoroutineID() uint64 {
 	return uint64(reflect.ValueOf(make(chan int)).Pointer())
 }
 
-func isLifecycleHooks(v any) (LifecycleHooks[any], bool) {
-	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Struct {
-		return LifecycleHooks[any]{}, false
-	}
-
-	rt := rv.Type()
-	if rt.NumField() != 3 {
-		return LifecycleHooks[any]{}, false
-	}
-
-	onInitField, hasOnInit := rt.FieldByName("OnInit")
-	onStartField, hasOnStart := rt.FieldByName("OnStart")
-	onDestroyField, hasOnDestroy := rt.FieldByName("OnDestroy")
-
-	if !hasOnInit || !hasOnStart || !hasOnDestroy {
-		return LifecycleHooks[any]{}, false
-	}
-
-	isValidHook := func(f reflect.StructField) bool {
-		return f.Type.Kind() == reflect.Func &&
-			f.Type.NumIn() == 1 &&
-			f.Type.NumOut() == 1 &&
-			f.Type.Out(0) == reflect.TypeOf((*error)(nil)).Elem()
-	}
-
-	if !isValidHook(onInitField) || !isValidHook(onStartField) || !isValidHook(onDestroyField) {
-		return LifecycleHooks[any]{}, false
-	}
-
-	return LifecycleHooks[any]{
-		OnInit:    convertToInterfaceFunc(rv.FieldByName("OnInit")),
-		OnStart:   convertToInterfaceFunc(rv.FieldByName("OnStart")),
-		OnDestroy: convertToInterfaceFunc(rv.FieldByName("OnDestroy")),
-	}, true
-}
-
-func convertToInterfaceFunc(v reflect.Value) func(any) error {
-	if v.IsNil() {
-		return nil
-	}
-	return func(i any) error {
-		results := v.Call([]reflect.Value{reflect.ValueOf(i)})
-		if len(results) == 0 {
-			return nil
-		}
-		err, _ := results[0].Interface().(error)
-		return err
-	}
-}
-
 // Type-safe wrappers
 
-func Register[T any](c *Container, constructor any, options ...any) error {
+func Register[T any](c *Context, constructor any, options ...any) error {
 	return c.Register(constructor, options...)
 }
 
-func Resolve[T any](c *Container, options ...any) (T, error) {
+func Resolve[T any](c *Context, options ...any) (T, error) {
 	var t T
 	instance, err := c.Resolve(reflect.TypeOf(&t).Elem(), options...)
 	if err != nil {
@@ -487,6 +417,6 @@ func Resolve[T any](c *Container, options ...any) (T, error) {
 	return instance.(T), nil
 }
 
-func AutoWire[T any](c *Container, target *T) error {
+func AutoWire[T any](c *Context, target *T) error {
 	return c.AutoWire(target)
 }
