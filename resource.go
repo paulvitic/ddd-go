@@ -48,7 +48,7 @@ type Resource struct {
 // Create a resource from struct to be added to the context to be autowired
 // and instatiated as a singelton, prototype or request scoped resource instance
 func NewResource[I any](value any, options ...any) *Resource {
-	// make sure value is a struct kind type or pointer to struct
+	// Make sure value is a struct kind type or pointer to struct
 	valueType := reflect.TypeOf(value)
 	if valueType.Kind() == reflect.Ptr {
 		valueType = valueType.Elem()
@@ -64,13 +64,15 @@ func NewResource[I any](value any, options ...any) *Resource {
 	}
 
 	// Verify that the value implements the interface
-	// FIXED: Check both pointer and value types
-	implementsInterface := valueType.Implements(interfaceType) || reflect.PtrTo(valueType).Implements(interfaceType)
-	if !implementsInterface {
-		panic("value does not implement the specified interface")
+	// Check both the value type AND pointer type for implementation
+	valueImplements := valueType.Implements(interfaceType)
+	pointerImplements := reflect.PtrTo(valueType).Implements(interfaceType)
+
+	if !valueImplements && !pointerImplements {
+		panic(fmt.Sprintf("value of type %v does not implement the specified interface %v", valueType, interfaceType))
 	}
 
-	resourceName, scope := processOptions(valueType, options)
+	resourceName, scope := processOptions(valueType, options...)
 
 	// Parse dependencies from struct tags
 	dependencies := parseDependencies(valueType)
@@ -130,6 +132,7 @@ func processOptions(typ reflect.Type, options ...any) (string, Scope) {
 	var name string
 	scope := Singleton
 
+	// Process each option
 	for _, option := range options {
 		switch v := option.(type) {
 		case string:
@@ -250,77 +253,3 @@ func toCamelCase(s string) string {
 	runes[0] = unicode.ToLower(runes[0])
 	return string(runes)
 }
-
-// func ResourceFromConstructor(constructor any, options ...any) (*Resource, error) {
-// 	constructorType := reflect.TypeOf(constructor)
-// 	if constructorType.Kind() != reflect.Func {
-// 		return nil, fmt.Errorf("constructor must be a function")
-// 	}
-
-// 	if constructorType.NumOut() == 0 || (constructorType.NumOut() == 2 && !constructorType.Out(1).Implements(reflect.TypeOf((*error)(nil)).Elem())) {
-// 		return nil, fmt.Errorf("constructor must return (T) or (T, error)")
-// 	}
-
-// 	typ := constructorType.Out(0)
-
-// 	name, scope := processOptions(typ, options...)
-
-// 	return &Resource{
-// 		name:         name,
-// 		constructor:  reflect.ValueOf(constructor),
-// 		scope:        scope,
-// 		hooks:        hooks,
-// 		instancePool: sync.Map{},
-// 	}, nil
-// }
-
-// func isLifecycleHooks(v any) (ResourceLifecycleHooks[any], bool) {
-// 	rv := reflect.ValueOf(v)
-// 	if rv.Kind() != reflect.Struct {
-// 		return ResourceLifecycleHooks[any]{}, false
-// 	}
-
-// 	rt := rv.Type()
-// 	if rt.NumField() != 3 {
-// 		return ResourceLifecycleHooks[any]{}, false
-// 	}
-
-// 	onInitField, hasOnInit := rt.FieldByName("OnInit")
-// 	onStartField, hasOnStart := rt.FieldByName("OnStart")
-// 	onDestroyField, hasOnDestroy := rt.FieldByName("OnDestroy")
-
-// 	if !hasOnInit || !hasOnStart || !hasOnDestroy {
-// 		return ResourceLifecycleHooks[any]{}, false
-// 	}
-
-// 	isValidHook := func(f reflect.StructField) bool {
-// 		return f.Type.Kind() == reflect.Func &&
-// 			f.Type.NumIn() == 1 &&
-// 			f.Type.NumOut() == 1 &&
-// 			f.Type.Out(0) == reflect.TypeOf((*error)(nil)).Elem()
-// 	}
-
-// 	if !isValidHook(onInitField) || !isValidHook(onStartField) || !isValidHook(onDestroyField) {
-// 		return ResourceLifecycleHooks[any]{}, false
-// 	}
-
-// 	return ResourceLifecycleHooks[any]{
-// 		OnInit:    convertToInterfaceFunc(rv.FieldByName("OnInit")),
-// 		OnStart:   convertToInterfaceFunc(rv.FieldByName("OnStart")),
-// 		OnDestroy: convertToInterfaceFunc(rv.FieldByName("OnDestroy")),
-// 	}, true
-// }
-
-// func convertToInterfaceFunc(v reflect.Value) func(any) error {
-// 	if v.IsNil() {
-// 		return nil
-// 	}
-// 	return func(i any) error {
-// 		results := v.Call([]reflect.Value{reflect.ValueOf(i)})
-// 		if len(results) == 0 {
-// 			return nil
-// 		}
-// 		err, _ := results[0].Interface().(error)
-// 		return err
-// 	}
-// }

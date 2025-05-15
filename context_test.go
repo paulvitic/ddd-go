@@ -1,8 +1,23 @@
 package ddd
 
 import (
+	"fmt"
+	"net/http"
 	"testing"
 )
+
+type TestEndpoint struct {
+	PathValue   string
+	HandlersMap map[HttpMethod]http.HandlerFunc
+}
+
+func (e *TestEndpoint) Path() string {
+	return e.PathValue
+}
+
+func (e *TestEndpoint) Handlers() map[HttpMethod]http.HandlerFunc {
+	return e.HandlersMap
+}
 
 // Test fixtures for Context tests
 type Config interface {
@@ -55,7 +70,7 @@ type SimpleUserController struct {
 
 func (c *SimpleUserController) GetUser(id int) string {
 	c.Logger.Log("Getting user " + c.Repository.FindById(id))
-	return "User " + string(id)
+	return "User " + fmt.Sprint(id)
 }
 
 func (c *SimpleUserController) OnInit() error {

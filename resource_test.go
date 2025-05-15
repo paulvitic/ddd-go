@@ -454,5 +454,5 @@ func ExampleNewResource() {
 		reflect.TypeOf(loggerResource).String(),
 		reflect.TypeOf(repoResource).String(),
 		reflect.TypeOf(serviceResource).String())
-	// Output: Created resources: *Resource, *Resource, *Resource
+	// Output: Created resources: *ddd.Resource, *ddd.Resource, *ddd.Resource
 }

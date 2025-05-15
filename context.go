@@ -266,7 +266,7 @@ func (c *Context) resolveDependencies(value reflect.Value) error {
 				return fmt.Errorf("dependency not found: %s (%s)", tag, depType)
 			}
 
-			// Nil check before type assertion
+			// Null check
 			if depInstance == nil {
 				return fmt.Errorf("dependency instance is nil: %s (%s)", tag, depType)
 			}
