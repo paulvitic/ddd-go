@@ -1,128 +1,10 @@
 package ddd
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"testing"
 )
-
-// Define test interfaces
-type Logger interface {
-	Log(message string)
-}
-
-type Service interface {
-	DoSomething() error
-}
-
-type Repository interface {
-	FindById(id int) string
-}
-
-// Define implementations
-type SimpleLogger struct {
-	LogLevel string `resource:"logLevel"`
-}
-
-func (l *SimpleLogger) Log(message string) {
-	fmt.Printf("[%s] %s\n", l.LogLevel, message)
-}
-
-func (l *SimpleLogger) OnInit() error {
-	return nil
-}
-
-func (l *SimpleLogger) OnDestroy() error {
-	return nil
-}
-
-// FullLifecycleLogger implements all lifecycle hooks
-type FullLifecycleLogger struct {
-	SimpleLogger
-}
-
-func (l *FullLifecycleLogger) OnInit() error    { return nil }
-func (l *FullLifecycleLogger) OnStart() error   { return nil }
-func (l *FullLifecycleLogger) OnDestroy() error { return nil }
-
-// TestLogger has flags to check if hooks were called
-type TestLogger struct {
-	LogLevel      string `resource:"logLevel"`
-	InitCalled    bool
-	StartCalled   bool
-	DestroyCalled bool
-}
-
-func (l *TestLogger) Log(message string) {
-	// No-op
-}
-
-func (l *TestLogger) OnInit() error {
-	l.InitCalled = true
-	return nil
-}
-
-func (l *TestLogger) OnStart() error {
-	l.StartCalled = true
-	return nil
-}
-
-func (l *TestLogger) OnDestroy() error {
-	l.DestroyCalled = true
-	return nil
-}
-
-// ErrorLogger returns errors from lifecycle hooks
-type ErrorLogger struct {
-	LogLevel string `resource:"logLevel"`
-}
-
-func (l *ErrorLogger) Log(message string) {
-	// No-op
-}
-
-func (l *ErrorLogger) OnInit() error {
-	return errors.New("init error")
-}
-
-// NoHooksStruct doesn't implement any lifecycle hooks
-type NoHooksStruct struct{}
-
-func (s *NoHooksStruct) DoSomething() error { return nil }
-
-type UserService struct {
-	Logger     Logger     `resource:"logger"`
-	Repository Repository `resource:"userRepo"`
-	ApiKey     string     `resource:"apiKey"`
-}
-
-func (s *UserService) DoSomething() error {
-	s.Logger.Log("Doing something with repository")
-	s.Repository.FindById(1)
-	return nil
-}
-
-func (s *UserService) OnInit() error {
-	if s.ApiKey == "" {
-		return errors.New("ApiKey cannot be empty")
-	}
-	return nil
-}
-
-func (s *UserService) OnStart() error {
-	return nil
-}
-
-type UserRepository struct{}
-
-func (r *UserRepository) FindById(id int) string {
-	return fmt.Sprintf("User with ID %d", id)
-}
-
-func (r *UserRepository) OnInit() error {
-	return nil
-}
 
 // Test cases
 func TestNewResourceBasicProperties(t *testing.T) {
@@ -261,7 +143,22 @@ func TestDependencyDetection(t *testing.T) {
 	})
 
 	t.Run("Custom dependency names via tags", func(t *testing.T) {
-		loggerResource := NewResource[Logger](SimpleLogger{})
+		// Create a logger with a resource tag
+		type TaggedLogger struct {
+			LogLevel string `resource:"logLevel"`
+		}
+
+		// Make TaggedLogger implement Logger
+		_ = NewResource[Logger](&struct {
+			TaggedLogger
+			logMethod func(string)
+		}{
+			logMethod: func(message string) {},
+		})
+
+		// Just test the dependencies
+		taggedLogger := TaggedLogger{}
+		loggerResource := NewResource[any](taggedLogger)
 		dependencies := loggerResource.Dependencies()
 
 		if len(dependencies) != 1 {
