@@ -112,17 +112,32 @@ func parseDependencies(valueType reflect.Type) []Dependency {
 	var dependencies []Dependency
 	for i := range valueType.NumField() {
 		field := valueType.Field(i)
-		fieldName := toCamelCase(field.Name)
-		tag := field.Tag.Get(ResourceTag)
-		if tag != "" {
-			fieldName = tag
-		}
 
-		// Use the tag value as the custom resource name
-		dependencies = append(dependencies, Dependency{
-			ResourceType: fieldName,
-			ResourceName: tag,
-		})
+		// Check if the field has a resource tag
+		_, hasTag := field.Tag.Lookup(ResourceTag)
+
+		// Only consider fields with a resource tag
+		if hasTag {
+			// Skip primitive types regardless of whether they have a resource tag
+			if isPrimitiveType(field.Type) {
+				continue
+			}
+
+			// Get the tag value
+			tagValue := field.Tag.Get(ResourceTag)
+
+			// Determine the resource name
+			resourceName := toCamelCase(field.Name)
+			if tagValue != "" { // If tag has a value, use that as the resource name
+				resourceName = tagValue
+			}
+
+			// Use the actual type of the field as ResourceType
+			dependencies = append(dependencies, Dependency{
+				ResourceType: field.Type.String(),
+				ResourceName: resourceName,
+			})
+		}
 	}
 	return dependencies
 }

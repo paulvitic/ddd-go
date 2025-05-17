@@ -3,19 +3,21 @@ package ddd
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/paulvitic/ddd-go"
 )
 
 // Test endpoint implementation for Context tests
 type TestEndpoint struct {
 	PathValue   string
-	HandlersMap map[HttpMethod]http.HandlerFunc
+	HandlersMap map[ddd.HttpMethod]http.HandlerFunc
 }
 
 func (e *TestEndpoint) Path() string {
 	return e.PathValue
 }
 
-func (e *TestEndpoint) Handlers() map[HttpMethod]http.HandlerFunc {
+func (e *TestEndpoint) Handlers() map[ddd.HttpMethod]http.HandlerFunc {
 	return e.HandlersMap
 }
 
@@ -53,8 +55,9 @@ func (c *SimpleConfig) GetValue(key string) string {
 	return c.values[key]
 }
 
+// SimpleLogger implements the Logger interface for testing
 type SimpleLogger struct {
-	LogLevel string // No resource tag for LogLevel in context_test
+	LogLevel string `resource:"logLevel"`
 }
 
 func (l *SimpleLogger) Log(message string) {
@@ -80,7 +83,7 @@ func (l *FullLifecycleLogger) OnDestroy() error { return nil }
 
 // TestLogger has flags to check if hooks were called
 type TestLogger struct {
-	LogLevel      string
+	LogLevel      string `resource:"logLevel"`
 	InitCalled    bool
 	StartCalled   bool
 	DestroyCalled bool
@@ -107,7 +110,7 @@ func (l *TestLogger) OnDestroy() error {
 
 // ErrorLogger returns errors from lifecycle hooks
 type ErrorLogger struct {
-	LogLevel string
+	LogLevel string `resource:"logLevel"`
 }
 
 func (l *ErrorLogger) Log(message string) {
@@ -124,7 +127,7 @@ type NoHooksStruct struct{}
 func (s *NoHooksStruct) DoSomething() error { return nil }
 
 type SimpleDatabaseService struct {
-	ConnectionString string
+	ConnectionString string `resource:"connectionString"`
 	Connected        bool
 }
 
@@ -145,7 +148,7 @@ func (s *SimpleDatabaseService) OnInit() error {
 type UserService struct {
 	Logger     Logger     `resource:"logger"`
 	Repository Repository `resource:"userRepo"`
-	ApiKey     string
+	ApiKey     string     `resource:"apiKey"`
 }
 
 func (s *UserService) DoSomething() error {

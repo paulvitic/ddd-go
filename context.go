@@ -263,62 +263,75 @@ func (c *Context) resolveDependenciesNoLock(value reflect.Value) error {
 	for i := 0; i < valueElem.NumField(); i++ {
 		field := valueElem.Field(i)
 		fieldType := valueType.Field(i)
+		fieldName := toCamelCase(fieldType.Name)
 
 		// Check if the field has a resource tag
-		tag := fieldType.Tag.Get(ResourceTag)
-		if tag != "" {
-			// This field is a dependency, resolve it
+		tagValue, hasTag := fieldType.Tag.Lookup(ResourceTag)
+		if !hasTag {
+			// Skip fields without a resource tag
+			continue
+		}
 
-			// Make sure the field is settable (i.e., not unexported)
-			if !field.CanSet() {
-				return fmt.Errorf("field %s with resource tag is not settable (probably unexported)", fieldType.Name)
+		// Skip primitive types
+		if isPrimitiveType(field.Type()) {
+			continue
+		}
+
+		// Make sure the field is settable (i.e., not unexported)
+		if !field.CanSet() {
+			return fmt.Errorf("field %s with resource tag is not settable (probably unexported)", fieldType.Name)
+		}
+
+		// Determine the resource name to look for
+		resourceName := fieldName
+		if tagValue != "" {
+			resourceName = tagValue
+		}
+
+		// Check if there's a resource with the same type and name
+		depType := field.Type().String()
+		var depInstance any
+		var found bool
+
+		// First try by name
+		resource, exists := c.resourcesByName[resourceName]
+		if exists {
+			instance, ok := c.getInstanceNoLock(resource)
+			if ok {
+				depInstance = instance
+				found = true
 			}
+		}
 
-			// Check if there's a resource with the same type and name
-			depType := field.Type().String()
-			var depInstance any
-			var found bool
-
-			// First try by name
-			resource, exists := c.resourcesByName[tag]
-			if exists {
-				instance, ok := c.getInstanceNoLock(resource)
+		// If not found by name, try by type
+		if !found {
+			resources, exists := c.resourcesByType[depType]
+			if exists && len(resources) > 0 {
+				instance, ok := c.getInstanceNoLock(resources[0])
 				if ok {
 					depInstance = instance
 					found = true
 				}
 			}
+		}
 
-			// If not found by name, try by type
-			if !found {
-				resources, exists := c.resourcesByType[depType]
-				if exists && len(resources) > 0 {
-					instance, ok := c.getInstanceNoLock(resources[0])
-					if ok {
-						depInstance = instance
-						found = true
-					}
-				}
-			}
+		if !found {
+			return fmt.Errorf("dependency not found: %s (%s)", resourceName, depType)
+		}
 
-			if !found {
-				return fmt.Errorf("dependency not found: %s (%s)", tag, depType)
-			}
+		// Null check
+		if depInstance == nil {
+			return fmt.Errorf("dependency instance is nil: %s (%s)", resourceName, depType)
+		}
 
-			// Null check
-			if depInstance == nil {
-				return fmt.Errorf("dependency instance is nil: %s (%s)", tag, depType)
-			}
+		// Set the field value
+		depValue := reflect.ValueOf(depInstance)
 
-			// Set the field value
-			depValue := reflect.ValueOf(depInstance)
-
-			// Make sure the field is settable and types are compatible
-			if field.CanSet() {
-				field.Set(depValue)
-			} else {
-				return fmt.Errorf("cannot set field %s", fieldType.Name)
-			}
+		// Make sure the field is settable and types are compatible
+		if depValue.Type().AssignableTo(field.Type()) {
+			field.Set(depValue)
+		} else {
+			return fmt.Errorf("cannot assign %v to field %s of type %v", depValue.Type(), fieldType.Name, field.Type())
 		}
 	}
 

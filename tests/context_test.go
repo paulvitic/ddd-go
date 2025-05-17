@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+
+	"github.com/paulvitic/ddd-go"
 )
 
 // Tests for Context
 func TestNewContext(t *testing.T) {
-	context := NewContext("test-context")
+	context := ddd.NewContext("test-context")
 
 	if context.Name() != "test-context" {
 		t.Errorf("Expected context name to be 'test-context', got '%s'", context.Name())
@@ -21,17 +23,17 @@ func TestNewContext(t *testing.T) {
 
 func TestSimpleResourceRegistration(t *testing.T) {
 	// Create resources
-	loggerResource := NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"})
+	loggerResource := ddd.NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"})
 
 	// Create context and add resources
-	context := NewContext("test-context").WithResources(loggerResource)
+	context := ddd.NewContext("test-context").WithResources(loggerResource)
 
 	if !context.IsReady() {
 		t.Errorf("Context should be ready after adding resources")
 	}
 
 	// Get the resource by type
-	instances, found := context.ResourcesByType("ddd.Logger")
+	instances, found := context.ResourcesByType("Logger")
 
 	if !found {
 		t.Errorf("Resource not found by type")
@@ -53,15 +55,15 @@ func TestSimpleResourceRegistration(t *testing.T) {
 
 func TestDependencyResolution(t *testing.T) {
 	// Create resources with dependencies
-	loggerResource := NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"})
-	repoResource := NewResource[Repository](UserRepository{})
-	dbServiceResource := NewResource[DatabaseService](&SimpleDatabaseService{ConnectionString: "test-connection"})
+	loggerResource := ddd.NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"})
+	repoResource := ddd.NewResource[Repository](UserRepository{})
+	dbServiceResource := ddd.NewResource[DatabaseService](&SimpleDatabaseService{ConnectionString: "test-connection"})
 
 	// Create the controller that depends on the above resources
-	controllerResource := NewResource[UserController](&SimpleUserController{})
+	controllerResource := ddd.NewResource[UserController](&SimpleUserController{})
 
 	// Create context and add resources - add them in non-dependency order to test sorting
-	context := NewContext("test-context").WithResources(
+	context := ddd.NewContext("test-context").WithResources(
 		controllerResource,
 		loggerResource,
 		repoResource,
@@ -117,13 +119,13 @@ func TestDependencyResolution(t *testing.T) {
 
 func TestContextLifecycleHooks(t *testing.T) {
 	// Create resources with hooks
-	dbServiceResource := NewResource[DatabaseService](&SimpleDatabaseService{ConnectionString: "test-connection"})
-	controllerResource := NewResource[UserController](&SimpleUserController{})
-	loggerResource := NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"})
-	repoResource := NewResource[Repository](UserRepository{})
+	dbServiceResource := ddd.NewResource[DatabaseService](&SimpleDatabaseService{ConnectionString: "test-connection"})
+	controllerResource := ddd.NewResource[UserController](&SimpleUserController{})
+	loggerResource := ddd.NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"})
+	repoResource := ddd.NewResource[Repository](UserRepository{})
 
 	// Create context and add resources
-	context := NewContext("test-context").WithResources(
+	context := ddd.NewContext("test-context").WithResources(
 		controllerResource,
 		loggerResource,
 		repoResource,
@@ -174,12 +176,12 @@ func TestContextLifecycleHooks(t *testing.T) {
 
 func TestContextResourceScopes(t *testing.T) {
 	// Create resources with different scopes
-	singletonLoggerResource := NewResource[Logger](SimpleLogger{LogLevel: "SINGLETON"})
-	prototypeLoggerResource := NewResource[Logger](SimpleLogger{LogLevel: "PROTOTYPE"}, "prototypeLogger", Prototype)
-	requestLoggerResource := NewResource[Logger](SimpleLogger{LogLevel: "REQUEST"}, "requestLogger", Request)
+	singletonLoggerResource := ddd.NewResource[Logger](SimpleLogger{LogLevel: "SINGLETON"})
+	prototypeLoggerResource := ddd.NewResource[Logger](SimpleLogger{LogLevel: "PROTOTYPE"}, "prototypeLogger", ddd.Prototype)
+	requestLoggerResource := ddd.NewResource[Logger](SimpleLogger{LogLevel: "REQUEST"}, "requestLogger", ddd.Request)
 
 	// Create context and add resources
-	context := NewContext("test-context").WithResources(
+	context := ddd.NewContext("test-context").WithResources(
 		singletonLoggerResource,
 		prototypeLoggerResource,
 		requestLoggerResource,
@@ -215,11 +217,11 @@ func TestContextResourceScopes(t *testing.T) {
 
 func TestGetByName(t *testing.T) {
 	// Create resources with custom names
-	loggerResource := NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"}, "customLogger")
-	repoResource := NewResource[Repository](UserRepository{}, "customRepo")
+	loggerResource := ddd.NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"}, "customLogger")
+	repoResource := ddd.NewResource[Repository](UserRepository{}, "customRepo")
 
 	// Create context and add resources
-	context := NewContext("test-context").WithResources(
+	context := ddd.NewContext("test-context").WithResources(
 		loggerResource,
 		repoResource,
 	)
@@ -250,17 +252,17 @@ func TestGetByName(t *testing.T) {
 
 func TestGetByTypeAndName(t *testing.T) {
 	// Create multiple resources of the same type with different names
-	debugLoggerResource := NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"}, "debugLogger")
-	infoLoggerResource := NewResource[Logger](SimpleLogger{LogLevel: "INFO"}, "infoLogger")
+	debugLoggerResource := ddd.NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"}, "debugLogger")
+	infoLoggerResource := ddd.NewResource[Logger](SimpleLogger{LogLevel: "INFO"}, "infoLogger")
 
 	// Create context and add resources
-	context := NewContext("test-context").WithResources(
+	context := ddd.NewContext("test-context").WithResources(
 		debugLoggerResource,
 		infoLoggerResource,
 	)
 
 	// Get by type and name
-	instance, found := context.ResourceByTypeAndName("ddd.Logger", "infoLogger")
+	instance, found := context.ResourceByTypeAndName("Logger", "infoLogger")
 
 	if !found {
 		t.Errorf("Resource not found by type and name")
@@ -276,7 +278,7 @@ func TestGetByTypeAndName(t *testing.T) {
 	}
 
 	// Get by type and name that doesn't exist
-	_, found = context.ResourceByTypeAndName("ddd.Logger", "nonExistentLogger")
+	_, found = context.ResourceByTypeAndName("Logger", "nonExistentLogger")
 
 	if found {
 		t.Errorf("Should not find non-existent resource")
@@ -285,18 +287,18 @@ func TestGetByTypeAndName(t *testing.T) {
 
 func TestMultipleInstancesOfSameType(t *testing.T) {
 	// Create multiple resources of the same type with different names
-	debugLoggerResource := NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"}, "debugLogger")
-	infoLoggerResource := NewResource[Logger](SimpleLogger{LogLevel: "INFO"}, "infoLogger")
+	debugLoggerResource := ddd.NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"}, "debugLogger")
+	infoLoggerResource := ddd.NewResource[Logger](SimpleLogger{LogLevel: "INFO"}, "infoLogger")
 
 	// Create a service that depends on a logger
 	type LoggingService struct {
 		Logger Logger `resource:"debugLogger"` // Specifically request the debug logger
 	}
 
-	serviceResource := NewResource[any](&LoggingService{})
+	serviceResource := ddd.NewResource[any](&LoggingService{})
 
 	// Create context and add resources
-	context := NewContext("test-context").WithResources(
+	context := ddd.NewContext("test-context").WithResources(
 		debugLoggerResource,
 		infoLoggerResource,
 		serviceResource,
@@ -336,19 +338,19 @@ func TestMultipleInstancesOfSameType(t *testing.T) {
 
 func TestGetMultipleResourcesByType(t *testing.T) {
 	// Create multiple resources of the same type with different names
-	debugLoggerResource := NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"}, "debugLogger")
-	infoLoggerResource := NewResource[Logger](SimpleLogger{LogLevel: "INFO"}, "infoLogger")
-	warnLoggerResource := NewResource[Logger](SimpleLogger{LogLevel: "WARN"}, "warnLogger")
+	debugLoggerResource := ddd.NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"}, "debugLogger")
+	infoLoggerResource := ddd.NewResource[Logger](SimpleLogger{LogLevel: "INFO"}, "infoLogger")
+	warnLoggerResource := ddd.NewResource[Logger](SimpleLogger{LogLevel: "WARN"}, "warnLogger")
 
 	// Create context and add resources
-	context := NewContext("test-context").WithResources(
+	context := ddd.NewContext("test-context").WithResources(
 		debugLoggerResource,
 		infoLoggerResource,
 		warnLoggerResource,
 	)
 
 	// Get all loggers by type
-	instances, found := context.ResourcesByType("ddd.Logger")
+	instances, found := context.ResourcesByType("Logger")
 
 	if !found {
 		t.Errorf("Loggers not found by type")
@@ -391,11 +393,11 @@ func TestCircularDependencies(t *testing.T) {
 		A any `resource:"serviceA"`
 	}
 
-	serviceAResource := NewResource[any](&ServiceA{}, "serviceA")
-	serviceBResource := NewResource[any](&ServiceB{}, "serviceB")
+	serviceAResource := ddd.NewResource[any](&ServiceA{}, "serviceA")
+	serviceBResource := ddd.NewResource[any](&ServiceB{}, "serviceB")
 
 	// Create context and add resources - this would ideally detect the circular dependency
-	context := NewContext("test-context").WithResources(
+	context := ddd.NewContext("test-context").WithResources(
 		serviceAResource,
 		serviceBResource,
 	)
@@ -416,21 +418,21 @@ func TestEndpoints(t *testing.T) {
 	// Create a test endpoint
 	testEndpoint := &TestEndpoint{
 		PathValue: "/test",
-		HandlersMap: map[HttpMethod]http.HandlerFunc{
-			GET: func(w http.ResponseWriter, r *http.Request) {
+		HandlersMap: map[ddd.HttpMethod]http.HandlerFunc{
+			ddd.GET: func(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprintf(w, "GET test")
 			},
-			POST: func(w http.ResponseWriter, r *http.Request) {
+			ddd.POST: func(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprintf(w, "POST test")
 			},
 		},
 	}
 
 	// Create a resource for the endpoint
-	endpointResource := NewResource[Endpoint](testEndpoint)
+	endpointResource := ddd.NewResource[ddd.Endpoint](testEndpoint)
 
 	// Create context and add resources
-	context := NewContext("test-context").WithResources(endpointResource)
+	context := ddd.NewContext("test-context").WithResources(endpointResource)
 
 	// Get all endpoints
 	endpoints := context.Endpoints()
@@ -445,10 +447,10 @@ func TestEndpoints(t *testing.T) {
 		}
 
 		handlers := endpoints[0].Handlers()
-		if _, ok := handlers[GET]; !ok {
+		if _, ok := handlers[ddd.GET]; !ok {
 			t.Errorf("Expected GET handler to be registered")
 		}
-		if _, ok := handlers[POST]; !ok {
+		if _, ok := handlers[ddd.POST]; !ok {
 			t.Errorf("Expected POST handler to be registered")
 		}
 	}
