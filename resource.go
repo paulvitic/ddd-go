@@ -47,39 +47,49 @@ type Resource struct {
 
 // Create a resource from struct to be added to the context to be autowired
 // and instatiated as a singelton, prototype or request scoped resource instance
-func NewResource[I any](value any, options ...any) *Resource {
-	// Make sure value is a struct kind type or pointer to struct
-	valueType := reflect.TypeOf(value)
-	if valueType.Kind() == reflect.Ptr {
-		valueType = valueType.Elem()
-	}
-	if valueType.Kind() != reflect.Struct {
-		panic("value must be a struct type or pointer to struct")
-	}
+func NewResource[I any](options ...any) *Resource {
 
-	// Get the interface type
+	var valueType reflect.Type
+	value, name, scope := processOptions(options...)
+
+	// get generic type
 	interfaceType := reflect.TypeOf((*I)(nil)).Elem()
-	if interfaceType.Kind() != reflect.Interface {
-		panic("type parameter I must be an interface")
+	if interfaceType.Kind() == reflect.Interface {
+		if value == nil {
+			panic("a struct should be submitted in options if generic is an interface")
+		}
+		valueType := reflect.TypeOf(value)
+
+		if valueType.Kind() == reflect.Ptr {
+			valueType = valueType.Elem()
+			if !reflect.PointerTo(valueType).Implements(interfaceType) {
+				panic(fmt.Sprintf("value of type %v does not implement interface %v", valueType, interfaceType))
+			}
+		} else if valueType.Kind() == reflect.Struct {
+			if !valueType.Implements(interfaceType) {
+				panic(fmt.Sprintf("value of type %v does not implement interface %v", valueType, interfaceType))
+			}
+		} else {
+			panic("value must be a struct type or pointer to struct")
+		}
+
+	} else if interfaceType.Kind() == reflect.Struct {
+		value = new(I)
+		valueType = interfaceType
+	} else {
+		panic("type parameter must be an interface or struct")
 	}
 
-	// Verify that the value implements the interface
-	// Check both the value type AND pointer type for implementation
-	valueImplements := valueType.Implements(interfaceType)
-	pointerImplements := reflect.PointerTo(valueType).Implements(interfaceType)
-
-	if !valueImplements && !pointerImplements {
-		panic(fmt.Sprintf("value of type %v does not implement the specified interface %v", valueType, interfaceType))
+	if name == "" {
+		name = getDefaultName(valueType)
 	}
-
-	resourceName, scope := processOptions(valueType, options...)
-
+	// Make sure value is a struct kind type or pointer to struct
 	dependencies := parseDependencies(valueType)
 
 	lifecycleHooks := getLifecycleHooks(value, valueType)
 
 	return &Resource{
-		name:         resourceName,
+		name:         name,
 		resourceType: interfaceType.String(),
 		value:        value,
 		scope:        scope,
@@ -106,6 +116,37 @@ func (r *Resource) Dependencies() []Dependency {
 
 func (r *Resource) LifecycleHooks() *LifecycleHooks[any] {
 	return r.hooks
+}
+
+func processOptions(options ...any) (any, string, Scope) {
+	var name string
+	var value any
+	scope := Singleton
+
+	// Process each option
+	for _, option := range options {
+		switch v := option.(type) {
+		case string:
+			name = v
+		case Scope:
+			scope = v
+		default:
+			valueType := reflect.TypeOf(option)
+			if valueType.Kind() == reflect.Ptr {
+				valueType = valueType.Elem()
+			}
+			if valueType.Kind() != reflect.Struct {
+				panic("value must be a struct type or pointer to struct")
+			}
+			value = option
+		}
+	}
+
+	if name == "" && value != nil {
+		name = getDefaultName(reflect.TypeOf(value))
+	}
+
+	return value, name, scope
 }
 
 func parseDependencies(valueType reflect.Type) []Dependency {
@@ -140,29 +181,6 @@ func parseDependencies(valueType reflect.Type) []Dependency {
 		}
 	}
 	return dependencies
-}
-
-func processOptions(typ reflect.Type, options ...any) (string, Scope) {
-	var name string
-	scope := Singleton
-
-	// Process each option
-	for _, option := range options {
-		switch v := option.(type) {
-		case string:
-			name = v
-		case Scope:
-			scope = v
-		default:
-			panic(fmt.Sprintf("unexpected option type: %T", option))
-		}
-	}
-
-	if name == "" {
-		name = getDefaultName(typ)
-	}
-
-	return name, scope
 }
 
 func getDefaultName(t reflect.Type) string {

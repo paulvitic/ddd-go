@@ -22,9 +22,9 @@ func (e *TestEndpoint) Handlers() map[ddd.HttpMethod]http.HandlerFunc {
 }
 
 // Test interfaces
-type Logger interface {
-	Log(message string)
-}
+// type Logger interface {
+// 	Log(message string)
+// }
 
 type Service interface {
 	DoSomething() error
@@ -55,31 +55,31 @@ func (c *SimpleConfig) GetValue(key string) string {
 	return c.values[key]
 }
 
-// SimpleLogger implements the Logger interface for testing
-type SimpleLogger struct {
-	LogLevel string `resource:"logLevel"`
-}
+// // SimpleLogger implements the Logger interface for testing
+// type SimpleLogger struct {
+// 	LogLevel string `resource:"logLevel"`
+// }
 
-func (l *SimpleLogger) Log(message string) {
-	fmt.Printf("[%s] %s\n", l.LogLevel, message)
-}
+// func (l *SimpleLogger) Log(message string) {
+// 	fmt.Printf("[%s] %s\n", l.LogLevel, message)
+// }
 
-func (l *SimpleLogger) OnInit() error {
-	return nil
-}
+// func (l *SimpleLogger) OnInit() error {
+// 	return nil
+// }
 
-func (l *SimpleLogger) OnDestroy() error {
-	return nil
-}
+// func (l *SimpleLogger) OnDestroy() error {
+// 	return nil
+// }
 
 // FullLifecycleLogger implements all lifecycle hooks
-type FullLifecycleLogger struct {
-	SimpleLogger
-}
+// type FullLifecycleLogger struct {
+// 	SimpleLogger
+// }
 
-func (l *FullLifecycleLogger) OnInit() error    { return nil }
-func (l *FullLifecycleLogger) OnStart() error   { return nil }
-func (l *FullLifecycleLogger) OnDestroy() error { return nil }
+// func (l *FullLifecycleLogger) OnInit() error    { return nil }
+// func (l *FullLifecycleLogger) OnStart() error   { return nil }
+// func (l *FullLifecycleLogger) OnDestroy() error { return nil }
 
 // TestLogger has flags to check if hooks were called
 type TestLogger struct {
@@ -146,13 +146,13 @@ func (s *SimpleDatabaseService) OnInit() error {
 }
 
 type UserService struct {
-	Logger     Logger     `resource:"logger"`
+	Logger     ddd.Logger `resource:"logger"`
 	Repository Repository `resource:"userRepo"`
 	ApiKey     string     `resource:"apiKey"`
 }
 
 func (s *UserService) DoSomething() error {
-	s.Logger.Log("Doing something with repository")
+	s.Logger.Info("Doing something with repository")
 	s.Repository.FindById(1)
 	return nil
 }
@@ -179,7 +179,7 @@ func (r *UserRepository) OnInit() error {
 }
 
 type SimpleUserController struct {
-	Logger        Logger          `resource:"logger"`
+	Logger        ddd.Logger      `resource:"logger"`
 	DbService     DatabaseService `resource:"dbService"`
 	Repository    Repository      `resource:"userRepo"`
 	InitCalled    bool
@@ -188,7 +188,7 @@ type SimpleUserController struct {
 }
 
 func (c *SimpleUserController) GetUser(id int) string {
-	c.Logger.Log("Getting user " + c.Repository.FindById(id))
+	c.Logger.Info("Getting user " + c.Repository.FindById(id))
 	return "User " + fmt.Sprint(id)
 }
 

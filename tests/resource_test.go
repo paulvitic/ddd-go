@@ -11,10 +11,10 @@ import (
 // Test cases
 func TestNewResourceBasicProperties(t *testing.T) {
 	// Test with default name and scope
-	loggerResource := ddd.NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"})
+	loggerResource := ddd.NewResource[ddd.Logger]()
 
-	if loggerResource.Name() != "simpleLogger" {
-		t.Errorf("Expected name to be 'simpleLogger', got '%s'", loggerResource.Name())
+	if loggerResource.Name() != "logger" {
+		t.Errorf("Expected name to be 'logger', got '%s'", loggerResource.Name())
 	}
 
 	if loggerResource.Scope() != ddd.Singleton {
@@ -31,7 +31,7 @@ func TestNewResourceWithCustomOptions(t *testing.T) {
 	}{
 		{
 			name:          "No options",
-			options:       []any{},
+			options:       []any{UserRepository{}},
 			expectedName:  "userRepository",
 			expectedScope: ddd.Singleton,
 		},
@@ -69,7 +69,8 @@ func TestNewResourceWithCustomOptions(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			resource := ddd.NewResource[Repository](UserRepository{}, tc.options...)
+			// resource := ddd.NewResource[Repository](UserRepository{}, tc.options...)
+			resource := ddd.NewResource[Repository](tc.options...)
 
 			if resource.Name() != tc.expectedName {
 				t.Errorf("Expected name to be '%s', got '%s'", tc.expectedName, resource.Name())
@@ -86,12 +87,12 @@ func TestInterfaceVerification(t *testing.T) {
 	// Test successful interface verification
 	t.Run("Valid implementation", func(t *testing.T) {
 		// This should not panic
-		_ = ddd.NewResource[Logger](&SimpleLogger{LogLevel: "DEBUG"})
+		_ = ddd.NewResource[ddd.Logger](&ddd.Logger{})
 	})
 
 	t.Run("Value type implementing with pointer receiver", func(t *testing.T) {
 		// This should not panic even though SimpleLogger methods have pointer receivers
-		_ = ddd.NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"})
+		_ = ddd.NewResource[ddd.Logger](ddd.Logger{})
 	})
 
 	t.Run("Invalid implementation", func(t *testing.T) {
@@ -103,7 +104,7 @@ func TestInterfaceVerification(t *testing.T) {
 		}()
 
 		// This should panic because string doesn't implement Logger
-		_ = ddd.NewResource[Logger]("not an implementation")
+		_ = ddd.NewResource[ddd.Logger]("not an implementation")
 	})
 }
 
@@ -168,7 +169,7 @@ func TestDependencyDetection(t *testing.T) {
 
 func TestLifecycleHooks(t *testing.T) {
 	t.Run("All lifecycle hooks", func(t *testing.T) {
-		resource := ddd.NewResource[Logger](FullLifecycleLogger{})
+		resource := ddd.NewResource[ddd.Logger](ddd.Logger{})
 		hooks := resource.LifecycleHooks()
 
 		if hooks.OnInit == nil || hooks.OnStart == nil || hooks.OnDestroy == nil {
@@ -208,8 +209,8 @@ func TestLifecycleHooks(t *testing.T) {
 
 func TestValuePointerReceiver(t *testing.T) {
 	t.Run("Value type with pointer receiver methods", func(t *testing.T) {
-		valueLogger := SimpleLogger{LogLevel: "DEBUG"}
-		resource := ddd.NewResource[Logger](valueLogger)
+		valueLogger := ddd.Logger{}
+		resource := ddd.NewResource[ddd.Logger](valueLogger)
 		hooks := resource.LifecycleHooks()
 
 		// These should work even though SimpleLogger has pointer receiver methods
@@ -223,8 +224,8 @@ func TestValuePointerReceiver(t *testing.T) {
 	})
 
 	t.Run("Pointer type with pointer receiver methods", func(t *testing.T) {
-		pointerLogger := &SimpleLogger{LogLevel: "DEBUG"}
-		resource := ddd.NewResource[Logger](pointerLogger)
+		pointerLogger := &ddd.Logger{}
+		resource := ddd.NewResource[ddd.Logger](pointerLogger)
 		hooks := resource.LifecycleHooks()
 
 		if hooks.OnInit == nil {
@@ -254,9 +255,9 @@ func TestResourceScopes(t *testing.T) {
 			var resource *ddd.Resource
 			if tc.scope == ddd.Scope(-1) {
 				// No scope specified, use default
-				resource = ddd.NewResource[Logger](SimpleLogger{})
+				resource = ddd.NewResource[ddd.Logger](ddd.Logger{})
 			} else {
-				resource = ddd.NewResource[Logger](SimpleLogger{}, tc.scope)
+				resource = ddd.NewResource[ddd.Logger](ddd.Logger{}, tc.scope)
 			}
 
 			if resource.Scope() != tc.expectedScope {
@@ -275,7 +276,7 @@ func TestInvalidOptions(t *testing.T) {
 		}()
 
 		// This should panic because 123 is not a valid option type
-		_ = ddd.NewResource[Logger](SimpleLogger{}, 123)
+		_ = ddd.NewResource[ddd.Logger](ddd.Logger{}, 123)
 	})
 }
 
@@ -283,7 +284,7 @@ func TestInvalidOptions(t *testing.T) {
 func TestLifecycleHookExecution(t *testing.T) {
 	// Create the resource
 	logger := &TestLogger{LogLevel: "DEBUG"}
-	resource := ddd.NewResource[Logger](logger)
+	resource := ddd.NewResource[ddd.Logger](logger)
 	hooks := resource.LifecycleHooks()
 
 	// Call the hooks
@@ -316,7 +317,7 @@ func TestLifecycleHookExecution(t *testing.T) {
 // Test that hooks properly return errors
 func TestLifecycleHookErrors(t *testing.T) {
 	// Create the resource
-	resource := ddd.NewResource[Logger](ErrorLogger{LogLevel: "DEBUG"})
+	resource := ddd.NewResource[ddd.Logger](ErrorLogger{LogLevel: "DEBUG"})
 	hooks := resource.LifecycleHooks()
 
 	// Call the hook and check for error
@@ -329,7 +330,7 @@ func TestLifecycleHookErrors(t *testing.T) {
 // Example of how resources would be used
 func ExampleNewResource() {
 	// Create resources
-	loggerResource := ddd.NewResource[Logger](SimpleLogger{LogLevel: "DEBUG"})
+	loggerResource := ddd.NewResource[ddd.Logger](ddd.Logger{})
 	repoResource := ddd.NewResource[Repository](UserRepository{}, "userRepo", ddd.Prototype)
 	serviceResource := ddd.NewResource[Service](UserService{ApiKey: "abc123"}, "userService")
 

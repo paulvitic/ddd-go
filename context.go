@@ -85,7 +85,7 @@ func (c *Context) ResourcesByType(resourceType string) ([]any, bool) {
 
 	result := make([]any, 0, len(resources))
 	for _, resource := range resources {
-		instance, ok := c.getInstanceNoLock(resource)
+		instance, ok := c.getInstance(resource)
 		if ok {
 			result = append(result, instance)
 		}
@@ -108,7 +108,7 @@ func (c *Context) ResourceByName(name string) (any, bool) {
 		return nil, false
 	}
 
-	return c.getInstanceNoLock(resource)
+	return c.getInstance(resource)
 }
 
 // ResourceByTypeAndName returns the resource with the given type and name
@@ -119,7 +119,7 @@ func (c *Context) ResourceByTypeAndName(resourceType, name string) (any, bool) {
 	// First try to get the resource by name
 	resource, exists := c.resourcesByName[name]
 	if exists && resource.Type() == resourceType {
-		return c.getInstanceNoLock(resource)
+		return c.getInstance(resource)
 	}
 
 	// If not found by name, try by type and then check names
@@ -130,7 +130,7 @@ func (c *Context) ResourceByTypeAndName(resourceType, name string) (any, bool) {
 
 	for _, resource := range resources {
 		if resource.Name() == name {
-			return c.getInstanceNoLock(resource)
+			return c.getInstance(resource)
 		}
 	}
 
@@ -149,7 +149,7 @@ func (c *Context) Endpoints() []Endpoint {
 	for _, resource := range c.resources {
 		// Check if the resource type matches Endpoint interface
 		if resource.Type() == "ddd.Endpoint" {
-			instance, ok := c.getInstanceNoLock(resource)
+			instance, ok := c.getInstance(resource)
 			if !ok || instance == nil {
 				continue
 			}
@@ -172,9 +172,9 @@ func (c *Context) sortResourcesByDependencyCount() {
 	})
 }
 
-// getInstanceNoLock returns the instance of the resource based on its scope
+// getInstance returns the instance of the resource based on its scope
 // without acquiring a lock. The caller must hold at least a read lock.
-func (c *Context) getInstanceNoLock(resource *Resource) (any, bool) {
+func (c *Context) getInstance(resource *Resource) (any, bool) {
 	switch resource.Scope() {
 	case Singleton:
 		// For singletons, we should have already created an instance
@@ -186,7 +186,7 @@ func (c *Context) getInstanceNoLock(resource *Resource) (any, bool) {
 
 	case Prototype:
 		// For prototypes, create a new instance each time
-		instance, err := c.createInstanceNoLock(resource)
+		instance, err := c.createInstance(resource)
 		if err != nil {
 			return nil, false
 		}
@@ -195,7 +195,7 @@ func (c *Context) getInstanceNoLock(resource *Resource) (any, bool) {
 	case Request:
 		// For request scope, we would typically use a request ID
 		// but since we don't have one here, we'll just create a new instance
-		instance, err := c.createInstanceNoLock(resource)
+		instance, err := c.createInstance(resource)
 		if err != nil {
 			return nil, false
 		}
@@ -206,9 +206,9 @@ func (c *Context) getInstanceNoLock(resource *Resource) (any, bool) {
 	}
 }
 
-// createInstanceNoLock creates a new instance of the resource
+// createInstance creates a new instance of the resource
 // without acquiring a lock. The caller must hold at least a read lock.
-func (c *Context) createInstanceNoLock(resource *Resource) (any, error) {
+func (c *Context) createInstance(resource *Resource) (any, error) {
 	// Clone the original value
 	value := reflect.ValueOf(resource.value)
 	if value.Kind() == reflect.Ptr {
@@ -227,7 +227,7 @@ func (c *Context) createInstanceNoLock(resource *Resource) (any, error) {
 	}
 
 	// Resolve dependencies
-	if err := c.resolveDependenciesNoLock(value); err != nil {
+	if err := c.resolveDependencies(value); err != nil {
 		return nil, err
 	}
 
@@ -244,9 +244,9 @@ func (c *Context) createInstanceNoLock(resource *Resource) (any, error) {
 	return instance, nil
 }
 
-// resolveDependenciesNoLock resolves the dependencies of the resource
+// resolveDependencies resolves the dependencies of the resource
 // without acquiring a lock. The caller must hold at least a read lock.
-func (c *Context) resolveDependenciesNoLock(value reflect.Value) error {
+func (c *Context) resolveDependencies(value reflect.Value) error {
 	// If it's a pointer, we want to work with the pointed value
 	valueElem := value
 	if value.Kind() == reflect.Ptr {
@@ -296,7 +296,7 @@ func (c *Context) resolveDependenciesNoLock(value reflect.Value) error {
 		// First try by name
 		resource, exists := c.resourcesByName[resourceName]
 		if exists {
-			instance, ok := c.getInstanceNoLock(resource)
+			instance, ok := c.getInstance(resource)
 			if ok {
 				depInstance = instance
 				found = true
@@ -307,7 +307,7 @@ func (c *Context) resolveDependenciesNoLock(value reflect.Value) error {
 		if !found {
 			resources, exists := c.resourcesByType[depType]
 			if exists && len(resources) > 0 {
-				instance, ok := c.getInstanceNoLock(resources[0])
+				instance, ok := c.getInstance(resources[0])
 				if ok {
 					depInstance = instance
 					found = true
@@ -359,7 +359,7 @@ func (c *Context) initializeResources() error {
 		}
 
 		// Create an instance of the resource
-		instance, err := c.createInstanceNoLock(resource)
+		instance, err := c.createInstance(resource)
 		if err != nil {
 			return err
 		}
