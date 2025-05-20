@@ -35,13 +35,13 @@ type LifecycleHooks[T any] struct {
 // Resource represents a resource in the application context
 type Resource struct {
 	name         string
-	value        any // the struct
+	value        any // zero-initialized struct value
 	resourceType string
 	dependencies []Dependency
-	scope        Scope
-	instance     atomic.Value
-	initOnce     sync.Once
 	hooks        *LifecycleHooks[any]
+	scope        Scope
+	initOnce     sync.Once
+	instance     atomic.Value
 	instancePool sync.Map
 }
 
@@ -56,25 +56,27 @@ func NewResource[I any](options ...any) *Resource {
 	interfaceType := reflect.TypeOf((*I)(nil)).Elem()
 	if interfaceType.Kind() == reflect.Interface {
 		if value == nil {
-			panic("a struct should be submitted in options if generic is an interface")
+			panic("options must include a struct that implements the interface")
 		}
 		valueType := reflect.TypeOf(value)
 
-		if valueType.Kind() == reflect.Ptr {
-			valueType = valueType.Elem()
-			if !reflect.PointerTo(valueType).Implements(interfaceType) {
-				panic(fmt.Sprintf("value of type %v does not implement interface %v", valueType, interfaceType))
-			}
-		} else if valueType.Kind() == reflect.Struct {
-			if !valueType.Implements(interfaceType) {
-				panic(fmt.Sprintf("value of type %v does not implement interface %v", valueType, interfaceType))
-			}
-		} else {
-			panic("value must be a struct type or pointer to struct")
+		// if valueType.Kind() == reflect.Ptr {
+		// 	valueType = valueType.Elem()
+		// 	if !reflect.PointerTo(valueType).Implements(interfaceType) {
+		// 		panic(fmt.Sprintf("value of type %v does not implement interface %v", valueType, interfaceType))
+		// 	}
+
+		// } else if valueType.Kind() == reflect.Struct {
+		if !valueType.Implements(interfaceType) {
+			panic(fmt.Sprintf("value of type %v does not implement interface %v", valueType, interfaceType))
 		}
 
+		// } else {
+		// 	panic("value must be a struct type or pointer to struct")
+		// }
+
 	} else if interfaceType.Kind() == reflect.Struct {
-		value = new(I)
+		value = *new(I)
 		valueType = interfaceType
 	} else {
 		panic("type parameter must be an interface or struct")
@@ -132,18 +134,18 @@ func processOptions(options ...any) (any, string, Scope) {
 			scope = v
 		default:
 			valueType := reflect.TypeOf(option)
-			if valueType.Kind() == reflect.Ptr {
-				valueType = valueType.Elem()
-			}
+			// if valueType.Kind() == reflect.Ptr {
+			// 	valueType = valueType.Elem()
+			// }
 			if valueType.Kind() != reflect.Struct {
 				panic("value must be a struct type or pointer to struct")
 			}
 			value = option
-		}
-	}
 
-	if name == "" && value != nil {
-		name = getDefaultName(reflect.TypeOf(value))
+			if name == "" {
+				name = getDefaultName(valueType)
+			}
+		}
 	}
 
 	return value, name, scope

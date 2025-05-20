@@ -50,6 +50,16 @@ func (l *Logger) formatLogEntry(level, caller, format string, args ...interface{
 	return fmt.Sprintf("[%s] %s %s: %s", timestamp, level, caller, message)
 }
 
+// SetOutput changes the output destination for the default logger
+func (l *Logger) SetOutput(w *os.File) {
+	l.Logger.SetOutput(w)
+}
+
+// SetDateFormat changes the date format for log timestamps
+func (l *Logger) SetDateFormat(format string) {
+	l.dateFormat = format
+}
+
 // Info logs an informational message
 func (l *Logger) Info(format string, args ...any) {
 	l.Println(l.formatLogEntry(LevelInfo, l.getCallerInfo(2), format, args...))
@@ -63,14 +73,4 @@ func (l *Logger) Warn(format string, args ...any) {
 // Error logs an error message
 func (l *Logger) Error(format string, args ...any) {
 	l.Println(l.formatLogEntry(LevelError, l.getCallerInfo(2), format, args...))
-}
-
-// SetOutput changes the output destination for the default logger
-func (l *Logger) SetOutput(w *os.File) {
-	l.Logger.SetOutput(w)
-}
-
-// SetDateFormat changes the date format for log timestamps
-func (l *Logger) SetDateFormat(format string) {
-	l.dateFormat = format
 }
