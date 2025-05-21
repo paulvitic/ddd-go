@@ -1,4 +1,4 @@
-package ddd
+package ddd_tests
 
 import (
 	"fmt"

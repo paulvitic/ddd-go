@@ -3,6 +3,7 @@ package ddd
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"unicode"
@@ -23,6 +24,7 @@ const ResourceTag = "resource"
 type Dependency struct {
 	ResourceType string // Name of the field in the struct
 	ResourceName string // Custom name for the dependency
+	IsPointer    bool
 }
 
 // LifecycleHooks defines lifecycle hooks for resources
@@ -56,9 +58,9 @@ func NewResource[I any](options ...any) *Resource {
 	interfaceType := reflect.TypeOf((*I)(nil)).Elem()
 	if interfaceType.Kind() == reflect.Interface {
 		if value == nil {
-			panic("options must include a struct that implements the interface")
+			panic("options must include a struct if resource generic type is an interface")
 		}
-		valueType := reflect.TypeOf(value)
+		valueType = reflect.TypeOf(value)
 
 		// if valueType.Kind() == reflect.Ptr {
 		// 	valueType = valueType.Elem()
@@ -76,14 +78,14 @@ func NewResource[I any](options ...any) *Resource {
 		// }
 
 	} else if interfaceType.Kind() == reflect.Struct {
-		value = *new(I)
+		value = *new(I) // non-pointer zero struct
 		valueType = interfaceType
 	} else {
 		panic("type parameter must be an interface or struct")
 	}
 
 	if name == "" {
-		name = getDefaultName(valueType)
+		name = toCamelCase(valueType.Name())
 	}
 	// Make sure value is a struct kind type or pointer to struct
 	dependencies := parseDependencies(valueType)
@@ -92,7 +94,7 @@ func NewResource[I any](options ...any) *Resource {
 
 	return &Resource{
 		name:         name,
-		resourceType: interfaceType.String(),
+		resourceType: getSimpleTypeName(interfaceType.String()),
 		value:        value,
 		scope:        scope,
 		dependencies: dependencies,
@@ -138,7 +140,7 @@ func processOptions(options ...any) (any, string, Scope) {
 			// 	valueType = valueType.Elem()
 			// }
 			if valueType.Kind() != reflect.Struct {
-				panic("value must be a struct type or pointer to struct")
+				panic("value must be a struct type")
 			}
 			value = option
 
@@ -179,6 +181,7 @@ func parseDependencies(valueType reflect.Type) []Dependency {
 			dependencies = append(dependencies, Dependency{
 				ResourceType: field.Type.String(),
 				ResourceName: resourceName,
+				IsPointer:    false, // TODO: determine if field type is and interface, struct or pointer to struct
 			})
 		}
 	}
@@ -190,6 +193,44 @@ func getDefaultName(t reflect.Type) string {
 		t = t.Elem()
 	}
 	return toCamelCase(t.Name())
+}
+
+func getSimpleTypeName(fullName string) string {
+	// Check if we have a generic type
+	openBracketIndex := strings.Index(fullName, "[")
+	if openBracketIndex == -1 {
+		return fullName
+	}
+
+	closeBracketIndex := strings.LastIndex(fullName, "]")
+	if closeBracketIndex == -1 {
+		return fullName
+	}
+
+	// Get the base type
+	baseType := fullName[:openBracketIndex]
+
+	// Extract the type parameter(s)
+	fullTypeParamSection := fullName[openBracketIndex+1 : closeBracketIndex]
+
+	// Handle multiple type parameters
+	typeParams := strings.Split(fullTypeParamSection, ",")
+	simplifiedParams := make([]string, 0, len(typeParams))
+
+	for _, param := range typeParams {
+		param = strings.TrimSpace(param)
+
+		// Get just the type name after the last dot
+		lastDotIndex := strings.LastIndex(param, ".")
+		if lastDotIndex == -1 {
+			simplifiedParams = append(simplifiedParams, param) // No dot found, use as is
+		} else {
+			simplifiedParams = append(simplifiedParams, param[lastDotIndex+1:])
+		}
+	}
+
+	// Reconstruct the simplified type
+	return baseType + "[" + strings.Join(simplifiedParams, ", ") + "]"
 }
 
 func getLifecycleHooks(value any, valueType reflect.Type) *LifecycleHooks[any] {

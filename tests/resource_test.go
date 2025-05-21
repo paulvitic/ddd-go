@@ -1,4 +1,4 @@
-package ddd
+package ddd_tests
 
 import (
 	"fmt"
@@ -17,8 +17,37 @@ func TestNewResourceBasicProperties(t *testing.T) {
 		t.Errorf("Expected name to be 'logger', got '%s'", loggerResource.Name())
 	}
 
+	if loggerResource.Type() != "ddd.Logger" {
+		t.Errorf("Expected resource type to be 'ddd.logger', got '%s'", loggerResource.Type())
+	}
+
 	if loggerResource.Scope() != ddd.Singleton {
 		t.Errorf("Expected default scope to be Singleton, got %v", loggerResource.Scope())
+	}
+}
+
+type SomeStruct struct{}
+type SomeStructRepo struct{}
+
+func (s SomeStructRepo) Save(aggregate *SomeStruct) error    { return nil }
+func (s SomeStructRepo) Load(id ddd.ID) (*SomeStruct, error) { return nil, nil }
+func (s SomeStructRepo) Delete(id ddd.ID) error              { return nil }
+func (s SomeStructRepo) Update(aggregate *SomeStruct) error  { return nil }
+
+func TestNewResourceInterfaceDeclaration(t *testing.T) {
+
+	repoResource := ddd.NewResource[ddd.Repository[SomeStruct]](SomeStructRepo{}, "customRepoName")
+
+	if repoResource.Name() != "customRepoName" {
+		t.Errorf("Expected name to be 'logger', got '%s'", repoResource.Name())
+	}
+
+	if repoResource.Type() != "ddd.Repository[SomeStruct]" {
+		t.Errorf("Expected resource type to be 'ddd.Repository[SomeStruct]', got '%s'", repoResource.Type())
+	}
+
+	if repoResource.Scope() != ddd.Singleton {
+		t.Errorf("Expected default scope to be Singleton, got %v", repoResource.Scope())
 	}
 }
 
