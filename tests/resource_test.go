@@ -27,7 +27,15 @@ func TestNewResourceBasicProperties(t *testing.T) {
 }
 
 type SomeStruct struct{}
-type SomeStructRepo struct{}
+type SomeDependencyInterface interface{}
+type SomeDependencyStruct struct{}
+type SomeStructRepo struct {
+	logger                  ddd.Logger              `resource:""`
+	someDependencyInterface SomeDependencyInterface `resource:""`
+	someDependencyStruct    SomeDependencyStruct    `resource:"customDepenedencyName"`
+	someDependencyPointer   *SomeDependencyStruct   `resource:""`
+	nonResourceDependency   string
+}
 
 func (s SomeStructRepo) Save(aggregate *SomeStruct) error    { return nil }
 func (s SomeStructRepo) Load(id ddd.ID) (*SomeStruct, error) { return nil, nil }
@@ -48,6 +56,18 @@ func TestNewResourceInterfaceDeclaration(t *testing.T) {
 
 	if repoResource.Scope() != ddd.Singleton {
 		t.Errorf("Expected default scope to be Singleton, got %v", repoResource.Scope())
+	}
+
+	if len(repoResource.Dependencies()) != 4 {
+		t.Errorf("Expected 4 resolved resource dependencies, got %v", len(repoResource.Dependencies()))
+	}
+
+	if repoResource.Dependencies()[2].ResourceName != "customDepenedencyName" {
+		t.Errorf("Expected dependency name 'customDepenedencyName', got %s", repoResource.Dependencies()[1].ResourceName)
+	}
+
+	if !repoResource.Dependencies()[3].IsPointer {
+		t.Errorf("Expected dependency to be a pointer")
 	}
 }
 
