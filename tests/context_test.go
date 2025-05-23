@@ -22,11 +22,11 @@ func TestNewContext(t *testing.T) {
 }
 
 func TestSimpleResourceRegistration(t *testing.T) {
-	// Create resources
-	loggerResource := ddd.NewResource[ddd.Logger](ddd.Logger{})
 
 	// Create context and add resources
-	context := ddd.NewContext("test-context").WithResources(loggerResource)
+	context := ddd.NewContext("test-context").WithResources(
+		ddd.NewResource[ddd.Logger](ddd.Logger{}),
+	)
 
 	if !context.IsReady() {
 		t.Errorf("Context should be ready after adding resources")

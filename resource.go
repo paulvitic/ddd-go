@@ -103,6 +103,10 @@ func (r *Resource) Type() string {
 	return r.resourceType
 }
 
+func (r *Resource) Value() any {
+	return r.value
+}
+
 func (r *Resource) Scope() Scope {
 	return r.scope
 }

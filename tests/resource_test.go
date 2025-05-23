@@ -1,6 +1,7 @@
 package ddd_tests
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/paulvitic/ddd-go"
@@ -23,22 +24,6 @@ func TestNewResourceBasicProperties(t *testing.T) {
 		t.Errorf("Expected default scope to be Singleton, got %v", loggerResource.Scope())
 	}
 }
-
-type SomeStruct struct{}
-type SomeDependencyInterface interface{}
-type SomeDependencyStruct struct{}
-type SomeStructRepo struct {
-	logger                  ddd.Logger              `resource:""`
-	someDependencyInterface SomeDependencyInterface `resource:""`
-	someDependencyStruct    SomeDependencyStruct    `resource:"customDepenedencyName"`
-	someDependencyPointer   *SomeDependencyStruct   `resource:""`
-	nonResourceDependency   string
-}
-
-func (s SomeStructRepo) Save(aggregate *SomeStruct) error    { return nil }
-func (s SomeStructRepo) Load(id ddd.ID) (*SomeStruct, error) { return nil, nil }
-func (s SomeStructRepo) Delete(id ddd.ID) error              { return nil }
-func (s SomeStructRepo) Update(aggregate *SomeStruct) error  { return nil }
 
 func TestNewResourceInterfaceDeclaration(t *testing.T) {
 
@@ -66,6 +51,22 @@ func TestNewResourceInterfaceDeclaration(t *testing.T) {
 
 	if !repoResource.Dependencies()[3].IsPointer {
 		t.Errorf("Expected dependency to be a pointer")
+	}
+}
+
+func TestConfigurationResource(t *testing.T) {
+	configResource := ddd.NewResource[DatabaseConfig]()
+	value := reflect.ValueOf(configResource.Value())
+
+	// Create a new instance using reflect.New, which returns a pointer
+	newInstancePtr := reflect.New(value.Type())
+
+	// Get the actual struct instance from the pointer
+	newInstance := newInstancePtr.Interface().(*DatabaseConfig)
+	newInstance.OnInit()
+
+	if newInstance.ConnectionString != "test_connection_string" {
+		t.Errorf("Expected 'test_connection_string' got %s", newInstance.ConnectionString)
 	}
 }
 

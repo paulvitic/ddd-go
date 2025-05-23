@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"strings"
 	"sync"
 )
 
@@ -30,47 +29,50 @@ func NewContext(name string) *Context {
 
 // WithResources adds resources to the context and returns the context
 func (c *Context) WithResources(resources ...*Resource) *Context {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
 
-	// Add resources to the context
-	for _, resource := range resources {
-		c.resources = append(c.resources, resource)
+	c.resources = append(c.resources, resources...)
 
-		// Add to type map - this is the key fix:
-		// When storing by type, use both the exact type and the package.name format
-		resourceType := resource.Type()
-		c.resourcesByType[resourceType] = append(c.resourcesByType[resourceType], resource)
+	// sort resources in descending order of their dependency count
+	sort.Slice(c.resources, func(i, j int) bool {
+		return len(c.resources[i].Dependencies()) < len(c.resources[j].Dependencies())
+	})
 
-		// Also store under the form "package.InterfaceName" for backward compatibility
-		// This assumes the type is in the format "github.com/pkg/path.InterfaceName"
-		parts := strings.Split(resourceType, ".")
-		if len(parts) > 1 {
-			// Get the last part (the interface name)
-			simpleName := parts[len(parts)-1]
-			// Create the package.name format (e.g., "ddd.Logger")
-			packageName := "ddd." + simpleName
-			// Store the resource under this format as well
-			c.resourcesByType[packageName] = append(c.resourcesByType[packageName], resource)
-		}
-
-		// Add to name map
-		c.resourcesByName[resource.Name()] = resource
-	}
-
-	// Sort resources by dependency count
-	c.sortResourcesByDependencyCount()
-
-	// Initialize resources
-	err := c.initializeResources()
-	if err != nil {
-		// In a real application, we might want to handle this error more gracefully
+	if err := c.initializeResources(); err != nil {
 		panic(fmt.Sprintf("Failed to initialize resources: %v", err))
 	}
 
+	// TODO: Check if this is neccessary
 	c.ready = true
 
 	return c
+
+	// c.mutex.Lock()
+	// defer c.mutex.Unlock()
+
+	// // Add resources to the context
+	// for _, resource := range resources {
+
+	// 	// Add to type map - this is the key fix:
+	// 	// When storing by type, use both the exact type and the package.name format
+	// 	resourceType := resource.Type()
+	// 	c.resourcesByType[resourceType] = append(c.resourcesByType[resourceType], resource)
+
+	// 	// Also store under the form "package.InterfaceName" for backward compatibility
+	// 	// This assumes the type is in the format "github.com/pkg/path.InterfaceName"
+	// 	parts := strings.Split(resourceType, ".")
+	// 	if len(parts) > 1 {
+	// 		// Get the last part (the interface name)
+	// 		simpleName := parts[len(parts)-1]
+	// 		// Create the package.name format (e.g., "ddd.Logger")
+	// 		packageName := "ddd." + simpleName
+	// 		// Store the resource under this format as well
+	// 		c.resourcesByType[packageName] = append(c.resourcesByType[packageName], resource)
+	// 	}
+
+	// 	// Add to name map
+	// 	c.resourcesByName[resource.Name()] = resource
+	// }
+
 }
 
 // ResourcesByType returns all resources of the given type
@@ -165,13 +167,6 @@ func (c *Context) Endpoints() []Endpoint {
 	return endpoints
 }
 
-// sortResourcesByDependencyCount sorts the resources by dependency count in ascending order
-func (c *Context) sortResourcesByDependencyCount() {
-	sort.Slice(c.resources, func(i, j int) bool {
-		return len(c.resources[i].Dependencies()) < len(c.resources[j].Dependencies())
-	})
-}
-
 // getInstance returns the instance of the resource based on its scope
 // without acquiring a lock. The caller must hold at least a read lock.
 func (c *Context) getInstance(resource *Resource) (any, bool) {
@@ -210,7 +205,7 @@ func (c *Context) getInstance(resource *Resource) (any, bool) {
 // without acquiring a lock. The caller must hold at least a read lock.
 func (c *Context) createInstance(resource *Resource) (any, error) {
 	// Clone the original value
-	value := reflect.ValueOf(resource.value)
+	value := reflect.ValueOf(resource.Value())
 	if value.Kind() == reflect.Ptr {
 		// If it's a pointer, create a new instance of the pointed type
 		if value.IsNil() {
@@ -352,6 +347,9 @@ func isPrimitiveType(t reflect.Type) bool {
 
 // initializeResources initializes all resources in dependency order
 func (c *Context) initializeResources() error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
 	for _, resource := range c.resources {
 		// Skip if it's not a singleton
 		if resource.Scope() != Singleton {

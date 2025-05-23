@@ -7,6 +7,34 @@ import (
 	"github.com/paulvitic/ddd-go"
 )
 
+type SomeStruct struct{}
+type SomeDependencyInterface interface{}
+type SomeDependencyStruct struct{}
+type SomeStructRepo struct {
+	logger                  ddd.Logger              `resource:""`
+	someDependencyInterface SomeDependencyInterface `resource:""`
+	someDependencyStruct    SomeDependencyStruct    `resource:"customDepenedencyName"`
+	someDependencyPointer   *SomeDependencyStruct   `resource:""`
+	nonResourceDependency   string
+}
+
+func (s SomeStructRepo) Save(aggregate *SomeStruct) error    { return nil }
+func (s SomeStructRepo) Load(id ddd.ID) (*SomeStruct, error) { return nil, nil }
+func (s SomeStructRepo) Delete(id ddd.ID) error              { return nil }
+func (s SomeStructRepo) Update(aggregate *SomeStruct) error  { return nil }
+
+type DatabaseConfig struct {
+	ConnectionString string `json:"connectionString,omitempty"`
+}
+
+func (s *DatabaseConfig) OnInit() {
+	if config, err := ddd.Configuration[DatabaseConfig]("configs/properties.json"); err != nil {
+		panic(err)
+	} else {
+		*s = *config
+	}
+}
+
 // Test endpoint implementation for Context tests
 type TestEndpoint struct {
 	PathValue   string
