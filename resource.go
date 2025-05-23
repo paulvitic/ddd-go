@@ -177,11 +177,14 @@ func parseDependencies(valueType reflect.Type) []Dependency {
 				resourceName = tagValue
 			}
 
+			// Determine if the field is a pointer
+			isPointer := field.Type.Kind() == reflect.Ptr
+
 			// Use the actual type of the field as ResourceType
 			dependencies = append(dependencies, Dependency{
 				ResourceType: field.Type.String(),
 				ResourceName: resourceName,
-				IsPointer:    false, // TODO: determine if field type is and interface, struct or pointer to struct
+				IsPointer:    isPointer,
 			})
 		}
 	}
