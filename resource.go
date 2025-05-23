@@ -62,13 +62,6 @@ func NewResource[I any](options ...any) *Resource {
 		}
 		valueType = reflect.TypeOf(value)
 
-		// if valueType.Kind() == reflect.Ptr {
-		// 	valueType = valueType.Elem()
-		// 	if !reflect.PointerTo(valueType).Implements(interfaceType) {
-		// 		panic(fmt.Sprintf("value of type %v does not implement interface %v", valueType, interfaceType))
-		// 	}
-
-		// } else if valueType.Kind() == reflect.Struct {
 		if !valueType.Implements(interfaceType) {
 			panic(fmt.Sprintf("value of type %v does not implement interface %v", valueType, interfaceType))
 		}
@@ -198,6 +191,15 @@ func getDefaultName(t reflect.Type) string {
 	return toCamelCase(t.Name())
 }
 
+func toCamelCase(s string) string {
+	if s == "" {
+		return s
+	}
+	runes := []rune(s)
+	runes[0] = unicode.ToLower(runes[0])
+	return string(runes)
+}
+
 func getSimpleTypeName(fullName string) string {
 	// Check if we have a generic type
 	openBracketIndex := strings.Index(fullName, "[")
@@ -321,13 +323,4 @@ func getLifecycleHooks(value any, valueType reflect.Type) *LifecycleHooks[any] {
 	}
 
 	return hooks
-}
-
-func toCamelCase(s string) string {
-	if s == "" {
-		return s
-	}
-	runes := []rune(s)
-	runes[0] = unicode.ToLower(runes[0])
-	return string(runes)
 }
