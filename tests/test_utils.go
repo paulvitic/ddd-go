@@ -28,11 +28,11 @@ type DatabaseConfig struct {
 }
 
 func (s *DatabaseConfig) OnInit() {
-	if config, err := ddd.Configuration[DatabaseConfig]("configs/properties.json"); err != nil {
+	config, err := ddd.Configuration[DatabaseConfig]("configs/properties.json")
+	if err != nil {
 		panic(err)
-	} else {
-		*s = *config
 	}
+	*s = *config
 }
 
 // Test endpoint implementation for Context tests
