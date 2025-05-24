@@ -23,10 +23,11 @@ type Logger struct {
 	dateFormat string
 }
 
-// defaultLogger is the package-level logger instance
-func (l *Logger) OnInit() {
-	l.Logger = log.New(os.Stdout, "", 0)
-	l.dateFormat = "2006-01-02 15:04:05.000 -07:00"
+func NewLogger() *Logger {
+	return &Logger{
+		Logger:     log.New(os.Stdout, "", 0),
+		dateFormat: "2006-01-02 15:04:05.000 -07:00",
+	}
 }
 
 // getCallerInfo returns the file name and line number of the caller

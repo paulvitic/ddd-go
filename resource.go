@@ -1,14 +1,10 @@
 package ddd
 
 import (
-	"fmt"
 	"reflect"
-	"strings"
-	"sync"
-	"sync/atomic"
-	"unicode"
 )
 
+// Scope represents the lifecycle of a dependency
 type Scope int
 
 const (
@@ -17,114 +13,57 @@ const (
 	Request
 )
 
-// ResourceTag is the struct tag used to specify dependencies
-const ResourceTag = "resource"
-
-// Dependency represents a dependency of a resource
-type Dependency struct {
-	ResourceType string // Name of the field in the struct
-	ResourceName string // Custom name for the dependency
-	IsPointer    bool
-}
-
-// LifecycleHooks defines lifecycle hooks for resources
-type LifecycleHooks[T any] struct {
-	OnInit    func(T) error
-	OnStart   func(T) error
-	OnDestroy func(T) error
-}
-
-// Resource represents a resource in the application context
-type Resource struct {
+type resource struct {
+	value        any
+	resourceType reflect.Type
 	name         string
-	value        any // zero-initialized struct value
-	resourceType string
-	dependencies []Dependency
-	hooks        *LifecycleHooks[any]
 	scope        Scope
-	initOnce     sync.Once
-	instance     atomic.Value
-	instancePool sync.Map
+	hooks        any
 }
 
-// Create a resource from struct to be added to the context to be autowired
-// and instatiated as a singelton, prototype or request scoped resource instance
-func NewResource[I any](options ...any) *Resource {
-
-	var valueType reflect.Type
-	value, name, scope := processOptions(options...)
-
-	// get generic type
-	interfaceType := reflect.TypeOf((*I)(nil)).Elem()
-	if interfaceType.Kind() == reflect.Interface {
-		if value == nil {
-			panic("options must include a struct if resource generic type is an interface")
-		}
-		valueType = reflect.TypeOf(value)
-
-		if !valueType.Implements(interfaceType) {
-			panic(fmt.Sprintf("value of type %v does not implement interface %v", valueType, interfaceType))
-		}
-
-		// } else {
-		// 	panic("value must be a struct type or pointer to struct")
-		// }
-
-	} else if interfaceType.Kind() == reflect.Struct {
-		value = *new(I) // non-pointer zero struct
-		valueType = interfaceType
-	} else {
-		panic("type parameter must be an interface or struct")
+func Resource(constructor any, options ...any) *resource {
+	constructorType := reflect.TypeOf(constructor)
+	if constructorType.Kind() != reflect.Func {
+		panic("constructor must be a function")
 	}
 
-	if name == "" {
-		name = toCamelCase(valueType.Name())
+	if constructorType.NumOut() == 0 || (constructorType.NumOut() == 2 && !constructorType.Out(1).Implements(reflect.TypeOf((*error)(nil)).Elem())) {
+		panic("constructor must return (T) or (T, error)")
 	}
-	// Make sure value is a struct kind type or pointer to struct
-	dependencies := parseDependencies(valueType)
 
-	lifecycleHooks := getLifecycleHooks(value, valueType)
+	typ := constructorType.Out(0)
+	name, scope, hooks := processOptions(typ, options...)
 
-	return &Resource{
+	return &resource{
+		value:        constructor,
+		resourceType: typ,
 		name:         name,
-		resourceType: getSimpleTypeName(interfaceType.String()),
-		value:        value,
 		scope:        scope,
-		dependencies: dependencies,
-		hooks:        lifecycleHooks,
+		hooks:        hooks,
 	}
 }
 
-func (r *Resource) Name() string {
-	return r.name
-}
-
-func (r *Resource) Type() string {
-	return r.resourceType
-}
-
-func (r *Resource) Value() any {
+func (r *resource) Value() any {
 	return r.value
 }
 
-func (r *Resource) Scope() Scope {
+func (r *resource) Name() string {
+	return r.name
+}
+
+func (r *resource) Type() reflect.Type {
+	return r.resourceType
+}
+
+func (r *resource) Scope() Scope {
 	return r.scope
 }
 
-func (r *Resource) Dependencies() []Dependency {
-	return r.dependencies
-}
-
-func (r *Resource) LifecycleHooks() *LifecycleHooks[any] {
-	return r.hooks
-}
-
-func processOptions(options ...any) (any, string, Scope) {
+func processOptions(typ reflect.Type, options ...any) (string, Scope, any) {
 	var name string
-	var value any
 	scope := Singleton
+	var hooks any
 
-	// Process each option
 	for _, option := range options {
 		switch v := option.(type) {
 		case string:
@@ -132,199 +71,52 @@ func processOptions(options ...any) (any, string, Scope) {
 		case Scope:
 			scope = v
 		default:
-			valueType := reflect.TypeOf(option)
-			// if valueType.Kind() == reflect.Ptr {
-			// 	valueType = valueType.Elem()
-			// }
-			if valueType.Kind() != reflect.Struct {
-				panic("value must be a struct type")
-			}
-			value = option
-
-			if name == "" {
-				name = getDefaultName(valueType)
+			if h, ok := isLifecycleHooks(v); ok {
+				hooks = h
 			}
 		}
 	}
 
-	return value, name, scope
+	if name == "" {
+		name = getDefaultName(typ)
+	}
+
+	return name, scope, hooks
 }
 
-func parseDependencies(valueType reflect.Type) []Dependency {
-	var dependencies []Dependency
-	for i := range valueType.NumField() {
-		field := valueType.Field(i)
-
-		// Check if the field has a resource tag
-		_, hasTag := field.Tag.Lookup(ResourceTag)
-
-		// Only consider fields with a resource tag
-		if hasTag {
-			// Skip primitive types regardless of whether they have a resource tag
-			if isPrimitiveType(field.Type) {
-				continue
-			}
-
-			// Get the tag value
-			tagValue := field.Tag.Get(ResourceTag)
-
-			// Determine the resource name
-			resourceName := toCamelCase(field.Name)
-			if tagValue != "" { // If tag has a value, use that as the resource name
-				resourceName = tagValue
-			}
-
-			// Determine if the field is a pointer
-			isPointer := field.Type.Kind() == reflect.Ptr
-
-			// Use the actual type of the field as ResourceType
-			dependencies = append(dependencies, Dependency{
-				ResourceType: field.Type.String(),
-				ResourceName: resourceName,
-				IsPointer:    isPointer,
-			})
-		}
-	}
-	return dependencies
-}
-
-func getDefaultName(t reflect.Type) string {
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-	return toCamelCase(t.Name())
-}
-
-func toCamelCase(s string) string {
-	if s == "" {
-		return s
-	}
-	runes := []rune(s)
-	runes[0] = unicode.ToLower(runes[0])
-	return string(runes)
-}
-
-func getSimpleTypeName(fullName string) string {
-	// Check if we have a generic type
-	openBracketIndex := strings.Index(fullName, "[")
-	if openBracketIndex == -1 {
-		return fullName
+func isLifecycleHooks(v any) (LifecycleHooks[any], bool) {
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Struct {
+		return LifecycleHooks[any]{}, false
 	}
 
-	closeBracketIndex := strings.LastIndex(fullName, "]")
-	if closeBracketIndex == -1 {
-		return fullName
+	rt := rv.Type()
+	if rt.NumField() != 3 {
+		return LifecycleHooks[any]{}, false
 	}
 
-	// Get the base type
-	baseType := fullName[:openBracketIndex]
+	onInitField, hasOnInit := rt.FieldByName("OnInit")
+	onStartField, hasOnStart := rt.FieldByName("OnStart")
+	onDestroyField, hasOnDestroy := rt.FieldByName("OnDestroy")
 
-	// Extract the type parameter(s)
-	fullTypeParamSection := fullName[openBracketIndex+1 : closeBracketIndex]
-
-	// Handle multiple type parameters
-	typeParams := strings.Split(fullTypeParamSection, ",")
-	simplifiedParams := make([]string, 0, len(typeParams))
-
-	for _, param := range typeParams {
-		param = strings.TrimSpace(param)
-
-		// Get just the type name after the last dot
-		lastDotIndex := strings.LastIndex(param, ".")
-		if lastDotIndex == -1 {
-			simplifiedParams = append(simplifiedParams, param) // No dot found, use as is
-		} else {
-			simplifiedParams = append(simplifiedParams, param[lastDotIndex+1:])
-		}
+	if !hasOnInit || !hasOnStart || !hasOnDestroy {
+		return LifecycleHooks[any]{}, false
 	}
 
-	// Reconstruct the simplified type
-	return baseType + "[" + strings.Join(simplifiedParams, ", ") + "]"
-}
-
-func getLifecycleHooks(value any, valueType reflect.Type) *LifecycleHooks[any] {
-	// We need the value as a pointer for method calls
-	valueValue := reflect.ValueOf(value)
-
-	// If it's not a pointer, create a pointer to it
-	if valueValue.Kind() != reflect.Ptr {
-		newValue := reflect.New(valueType)
-		newValue.Elem().Set(valueValue)
-		valueValue = newValue
+	isValidHook := func(f reflect.StructField) bool {
+		return f.Type.Kind() == reflect.Func &&
+			f.Type.NumIn() == 1 &&
+			f.Type.NumOut() == 1 &&
+			f.Type.Out(0) == reflect.TypeOf((*error)(nil)).Elem()
 	}
 
-	// The type we look for methods on must be the pointer type
-	methodType := valueValue.Type()
-
-	// Initialize with nil functions
-	hooks := &LifecycleHooks[any]{
-		OnInit:    nil,
-		OnStart:   nil,
-		OnDestroy: nil,
+	if !isValidHook(onInitField) || !isValidHook(onStartField) || !isValidHook(onDestroyField) {
+		return LifecycleHooks[any]{}, false
 	}
 
-	// Check for OnInit method
-	if onInit, exists := methodType.MethodByName("OnInit"); exists {
-		hooks.OnInit = func(a any) error {
-			// We need to use the actual instance, not valueValue
-			instanceValue := reflect.ValueOf(a)
-
-			// If it's not a pointer but the method has a pointer receiver, wrap it
-			if instanceValue.Kind() != reflect.Ptr && onInit.Type.In(0).Kind() == reflect.Ptr {
-				newInstance := reflect.New(instanceValue.Type())
-				newInstance.Elem().Set(instanceValue)
-				instanceValue = newInstance
-			}
-
-			results := onInit.Func.Call([]reflect.Value{instanceValue})
-			if len(results) > 0 && !results[0].IsNil() {
-				return results[0].Interface().(error)
-			}
-			return nil
-		}
-	}
-
-	// Check for OnStart method
-	if onStart, exists := methodType.MethodByName("OnStart"); exists {
-		hooks.OnStart = func(a any) error {
-			// We need to use the actual instance, not valueValue
-			instanceValue := reflect.ValueOf(a)
-
-			// If it's not a pointer but the method has a pointer receiver, wrap it
-			if instanceValue.Kind() != reflect.Ptr && onStart.Type.In(0).Kind() == reflect.Ptr {
-				newInstance := reflect.New(instanceValue.Type())
-				newInstance.Elem().Set(instanceValue)
-				instanceValue = newInstance
-			}
-
-			results := onStart.Func.Call([]reflect.Value{instanceValue})
-			if len(results) > 0 && !results[0].IsNil() {
-				return results[0].Interface().(error)
-			}
-			return nil
-		}
-	}
-
-	// Check for OnDestroy method
-	if onDestroy, exists := methodType.MethodByName("OnDestroy"); exists {
-		hooks.OnDestroy = func(a any) error {
-			// We need to use the actual instance, not valueValue
-			instanceValue := reflect.ValueOf(a)
-
-			// If it's not a pointer but the method has a pointer receiver, wrap it
-			if instanceValue.Kind() != reflect.Ptr && onDestroy.Type.In(0).Kind() == reflect.Ptr {
-				newInstance := reflect.New(instanceValue.Type())
-				newInstance.Elem().Set(instanceValue)
-				instanceValue = newInstance
-			}
-
-			results := onDestroy.Func.Call([]reflect.Value{instanceValue})
-			if len(results) > 0 && !results[0].IsNil() {
-				return results[0].Interface().(error)
-			}
-			return nil
-		}
-	}
-
-	return hooks
+	return LifecycleHooks[any]{
+		OnInit:    convertToInterfaceFunc(rv.FieldByName("OnInit")),
+		OnStart:   convertToInterfaceFunc(rv.FieldByName("OnStart")),
+		OnDestroy: convertToInterfaceFunc(rv.FieldByName("OnDestroy")),
+	}, true
 }

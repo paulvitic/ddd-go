@@ -41,28 +41,30 @@ type TestEndpoint struct {
 	handlers map[ddd.HttpMethod]http.HandlerFunc
 }
 
-func (e *TestEndpoint) OnInit() {
-	e.path = "test"
-	e.handlers = map[ddd.HttpMethod]http.HandlerFunc{
-		ddd.GET: func(w http.ResponseWriter, r *http.Request) {
-			response := map[string]interface{}{
-				"message": "Test endpoint GET request successful",
-				"path":    e.path,
-				"method":  "GET",
-			}
+func NewTestEndpoint() *TestEndpoint {
+	return &TestEndpoint{
+		"test",
+		map[ddd.HttpMethod]http.HandlerFunc{
+			ddd.GET: func(w http.ResponseWriter, r *http.Request) {
+				response := map[string]any{
+					"message": "Test endpoint GET request successful",
+					"path":    "test",
+					"method":  "GET",
+				}
 
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(response)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(response)
+			},
 		},
 	}
 }
 
-func (e *TestEndpoint) Path() string {
+func (e TestEndpoint) Path() string {
 	return e.path
 }
 
-func (e *TestEndpoint) Handlers() map[ddd.HttpMethod]http.HandlerFunc {
+func (e TestEndpoint) Handlers() map[ddd.HttpMethod]http.HandlerFunc {
 	return e.handlers
 }
 

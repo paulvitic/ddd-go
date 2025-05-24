@@ -3,442 +3,339 @@ package ddd
 import (
 	"fmt"
 	"reflect"
-	"sort"
 	"sync"
+	"sync/atomic"
+	"unicode"
 )
 
-// Context represents the application context which manages resources
+// Container represents the dependency injection container
 type Context struct {
-	name        string
-	resources   []*Resource
-	resourceMap map[string]map[string]*Resource // map of resource type to resources
-	mutex       sync.RWMutex
-	ready       bool
+	Logger       *Logger                                     `autowire:""`
+	name         string                                      `autowire:"-"`
+	dependencies map[reflect.Type]map[string]*dependencyInfo `autowire:"-"`
+	mu           sync.RWMutex                                `autowire:"-"`
+	resolving    sync.Map                                    `autowire:"-"`
 }
 
-// NewContext creates a new application context with the given name
+// dependencyInfo holds information about a registered dependency
+type dependencyInfo struct {
+	constructor  reflect.Value
+	scope        Scope
+	instance     atomic.Value
+	initOnce     sync.Once
+	hooks        any
+	instancePool sync.Map
+}
+
+// LifecycleHooks defines lifecycle hooks for dependencies
+type LifecycleHooks[T any] struct {
+	OnInit    func(T) error
+	OnStart   func(T) error
+	OnDestroy func(T) error
+}
+
+// NewContext creates a new Container
 func NewContext(name string) *Context {
-	return &Context{
-		name:        name,
-		resources:   make([]*Resource, 0),
-		resourceMap: make(map[string]map[string]*Resource),
+	context := &Context{
+		name:         name,
+		dependencies: make(map[reflect.Type]map[string]*dependencyInfo),
 	}
+	context.register(Resource(NewLogger))
+	context.AutoWire(context)
+	context.Logger.Info("New context created")
+	return context
 }
 
-// WithResources adds resources to the context and returns the context
-func (c *Context) WithResources(resources ...*Resource) *Context {
+func (c *Context) Name() string {
+	return c.name
+}
 
-	c.resources = append(c.resources, resources...)
+func (c *Context) WithResources(resources ...*resource) *Context {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	// sort resources in descending order of their dependency count
-	sort.Slice(c.resources, func(i, j int) bool {
-		return len(c.resources[i].Dependencies()) < len(c.resources[j].Dependencies())
-	})
-
-	c.initDeafultResources()
-
-	if err := c.initializeResources(); err != nil {
-		panic(fmt.Sprintf("Failed to initialize resources: %v", err))
+	c.Logger.Info("Registering resources")
+	for _, resource := range resources {
+		if err := c.register(resource); err != nil {
+			panic(fmt.Sprintf("failed to register resource %s: %v", resource.name, err))
+		}
 	}
-
-	// TODO: Check if this is neccessary
-	c.ready = true
-
 	return c
-
-	// c.mutex.Lock()
-	// defer c.mutex.Unlock()
-
-	// // Add resources to the context
-	// for _, resource := range resources {
-
-	// 	// Add to type map - this is the key fix:
-	// 	// When storing by type, use both the exact type and the package.name format
-	// 	resourceType := resource.Type()
-	// 	c.resourcesByType[resourceType] = append(c.resourcesByType[resourceType], resource)
-
-	// 	// Also store under the form "package.InterfaceName" for backward compatibility
-	// 	// This assumes the type is in the format "github.com/pkg/path.InterfaceName"
-	// 	parts := strings.Split(resourceType, ".")
-	// 	if len(parts) > 1 {
-	// 		// Get the last part (the interface name)
-	// 		simpleName := parts[len(parts)-1]
-	// 		// Create the package.name format (e.g., "ddd.Logger")
-	// 		packageName := "ddd." + simpleName
-	// 		// Store the resource under this format as well
-	// 		c.resourcesByType[packageName] = append(c.resourcesByType[packageName], resource)
-	// 	}
-
-	// 	// Add to name map
-	// 	c.resourcesByName[resource.Name()] = resource
-	// }
-
 }
 
-func (c *Context) initDeafultResources() {
-	c.getInstance(NewResource[Logger]())
-}
-
-// ResourcesByType returns all resources of the given type
-func (c *Context) ResourcesByType(resourceType string) ([]any, bool) {
-	c.mutex.RLock()
-	defer c.mutex.RUnlock()
-
-	resources, exists := c.resourceMap[resourceType]
-	if !exists || len(resources) == 0 {
-		return nil, false
-	}
-
-	result := make([]any, 0, len(resources))
-	for _, resource := range resources {
-		instance, ok := c.getInstance(resource)
-		if ok {
-			result = append(result, instance)
-		}
-	}
-
-	if len(result) == 0 {
-		return nil, false
-	}
-
-	return result, true
-}
-
-// ResourceByName returns the resource with the given name
-// func (c *Context) ResourceByName(name string) (any, bool) {
-// 	c.mutex.RLock()
-// 	defer c.mutex.RUnlock()
-
-// 	resource, exists := c.resourcesByName[name]
-// 	if !exists {
-// 		return nil, false
-// 	}
-
-// 	return c.getInstance(resource)
-// }
-
-// ResourceByTypeAndName returns the resource with the given type and name
-func (c *Context) ResourceByTypeAndName(resourceType string, name string) (any, bool) {
-	c.mutex.RLock()
-	defer c.mutex.RUnlock()
-
-	// First try to get the resource by name
-	resource, exists := c.resourceMap[resourceType][name]
-	if exists && resource.Type() == resourceType {
-		return c.getInstance(resource)
-	}
-
-	// If not found by name, try by type and then check names
-	resources, exists := c.resourceMap[resourceType]
-	if !exists {
-		return nil, false
-	}
-
-	for _, resource := range resources {
-		if resource.Name() == name {
-			return c.getInstance(resource)
-		}
-	}
-
-	return nil, false
-}
-
-// Endpoints returns all resources that implement the Endpoint interface
 func (c *Context) Endpoints() []Endpoint {
-	c.mutex.RLock()
-	defer c.mutex.RUnlock()
-
-	// Look for resources with Endpoint type
-	var endpoints []Endpoint
-
-	// Check all resources
-	for _, resource := range c.resources {
-		// Check if the resource type matches Endpoint interface
-		if resource.Type() == "ddd.Endpoint" {
-			instance, ok := c.getInstance(resource)
-			if !ok || instance == nil {
-				continue
-			}
-
-			// Type assertion with nil check
-			endpoint, ok := instance.(Endpoint)
-			if ok {
-				endpoints = append(endpoints, endpoint)
-			}
-		}
-	}
-
-	return endpoints
+	return make([]Endpoint, 0)
 }
 
-// getInstance returns the instance of the resource based on its scope
-// without acquiring a lock. The caller must hold at least a read lock.
-func (c *Context) getInstance(resource *Resource) (any, bool) {
-	switch resource.Scope() {
-	case Singleton:
-		// For singletons, we should have already created an instance
-		instance := resource.instance.Load()
-		if instance != nil {
-			return instance, true
-		}
-		return nil, false
+func (c *Context) register(resource *resource) error {
+	typ := resource.Type()
 
-	case Prototype:
-		// For prototypes, create a new instance each time
-		instance, err := c.createInstance(resource)
-		if err != nil {
-			return nil, false
-		}
-		return instance, true
-
-	case Request:
-		// For request scope, we would typically use a request ID
-		// but since we don't have one here, we'll just create a new instance
-		instance, err := c.createInstance(resource)
-		if err != nil {
-			return nil, false
-		}
-		return instance, true
-
-	default:
-		return nil, false
+	if _, exists := c.dependencies[typ]; !exists {
+		c.dependencies[typ] = make(map[string]*dependencyInfo)
 	}
+
+	c.dependencies[typ][resource.Name()] = &dependencyInfo{
+		constructor:  reflect.ValueOf(resource.Value()),
+		scope:        resource.Scope(),
+		hooks:        resource.hooks,
+		instancePool: sync.Map{},
+	}
+
+	return nil
 }
 
-// createInstance creates a new instance of the resource
-// without acquiring a lock. The caller must hold at least a read lock.
-func (c *Context) createInstance(resource *Resource) (any, error) {
-	// Clone the original value
-	value := reflect.ValueOf(resource.Value())
-	if value.Kind() == reflect.Struct {
-		// If it's a pointer, create a new instance of the pointed type
-		if value.IsNil() {
-			return nil, fmt.Errorf("cannot create instance from nil pointer")
-		}
-		newInstance := reflect.New(value.Elem().Type())
-		newInstance.Elem().Set(value.Elem())
-		value = newInstance
-	} else {
-		// If it's a value, create a new instance of the same type
-		newInstance := reflect.New(value.Type()).Elem()
-		newInstance.Set(value)
-		value = newInstance
-	}
+// Resolve resolves a dependency from the container
+func (c *Context) Resolve(typ reflect.Type, options ...any) (any, error) {
+	name := c.getResolveName(options...)
 
-	// Resolve dependencies
-	if err := c.resolveDependencies(value); err != nil {
+	// Check for circular dependencies
+	if _, resolving := c.resolving.LoadOrStore(typ, true); resolving {
+		return nil, fmt.Errorf("circular dependency detected for type %v", typ)
+	}
+	defer c.resolving.Delete(typ)
+
+	c.mu.RLock()
+	info, err := c.getDependencyInfo(typ, name)
+	c.mu.RUnlock()
+
+	if err != nil {
 		return nil, err
 	}
 
-	// Convert to interface
-	instance := value.Interface()
+	return c.resolveDependency(info)
+}
 
-	// Call OnInit hook if available
-	if resource.hooks != nil && resource.hooks.OnInit != nil {
-		if err := resource.hooks.OnInit(instance); err != nil {
-			return nil, err
+func (c *Context) getResolveName(options ...any) string {
+	for _, option := range options {
+		if n, ok := option.(string); ok {
+			return n
+		}
+	}
+	return ""
+}
+
+func (c *Context) getDependencyInfo(typ reflect.Type, name string) (*dependencyInfo, error) {
+	implementations, exists := c.dependencies[typ]
+	if !exists {
+		return nil, fmt.Errorf("no dependency registered for type %v", typ)
+	}
+
+	if name == "" {
+		name = getDefaultName(typ)
+	}
+
+	info, exists := implementations[name]
+	if !exists {
+		return nil, fmt.Errorf("no dependency named '%s' registered for type %v", name, typ)
+	}
+
+	return info, nil
+}
+
+func (c *Context) resolveDependency(info *dependencyInfo) (any, error) {
+	switch info.scope {
+	case Singleton:
+		return c.resolveSingleton(info)
+	case Prototype:
+		return c.construct(info)
+	case Request:
+		return c.resolveRequest(info)
+	default:
+		return nil, fmt.Errorf("unknown scope: %v", info.scope)
+	}
+}
+
+func (c *Context) resolveSingleton(info *dependencyInfo) (any, error) {
+	var err error
+	info.initOnce.Do(func() {
+		var instance any
+		instance, err = c.construct(info)
+		if err == nil {
+			info.instance.Store(instance)
+		}
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return info.instance.Load(), nil
+}
+
+func (c *Context) resolveRequest(info *dependencyInfo) (any, error) {
+	key := getGoroutineID()
+	if instance, ok := info.instancePool.Load(key); ok {
+		return instance, nil
+	}
+
+	instance, err := c.construct(info)
+	if err != nil {
+		return nil, err
+	}
+
+	info.instancePool.Store(key, instance)
+	return instance, nil
+}
+
+func (c *Context) construct(info *dependencyInfo) (any, error) {
+	params, err := c.resolveConstructorParams(info.constructor.Type())
+	if err != nil {
+		return nil, err
+	}
+
+	results := info.constructor.Call(params)
+	if len(results) == 2 && !results[1].IsNil() {
+		return nil, results[1].Interface().(error)
+	}
+
+	instance := results[0].Interface()
+
+	if hooks, ok := info.hooks.(LifecycleHooks[any]); ok {
+		if hooks.OnInit != nil {
+			if err := hooks.OnInit(instance); err != nil {
+				return nil, err
+			}
+		}
+		if hooks.OnStart != nil {
+			if err := hooks.OnStart(instance); err != nil {
+				return nil, err
+			}
 		}
 	}
 
 	return instance, nil
 }
 
-// resolveDependencies resolves the dependencies of the resource
-// without acquiring a lock. The caller must hold at least a read lock.
-func (c *Context) resolveDependencies(value reflect.Value) error {
-	// If it's a pointer, we want to work with the pointed value
-	valueElem := value
-	if value.Kind() == reflect.Ptr {
-		if value.IsNil() {
-			return fmt.Errorf("cannot resolve dependencies on nil pointer")
+func (c *Context) resolveConstructorParams(constructorType reflect.Type) ([]reflect.Value, error) {
+	params := make([]reflect.Value, constructorType.NumIn())
+	for i := 0; i < constructorType.NumIn(); i++ {
+		paramType := constructorType.In(i)
+		param, err := c.Resolve(paramType)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve parameter %d of type %v: %w", i, paramType, err)
 		}
-		valueElem = value.Elem()
+		params[i] = reflect.ValueOf(param)
+	}
+	return params, nil
+}
+
+// AutoWire automatically injects dependencies into the fields of the given struct
+func (c *Context) AutoWire(target any) error {
+	v := reflect.ValueOf(target)
+	if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("target must be a pointer to a struct")
 	}
 
-	// Get the type of the struct
-	valueType := valueElem.Type()
+	v = v.Elem()
+	t := v.Type()
 
-	// Iterate through each field in the struct
-	for i := 0; i < valueElem.NumField(); i++ {
-		field := valueElem.Field(i)
-		fieldType := valueType.Field(i)
-		fieldName := toCamelCase(fieldType.Name)
-
-		// Check if the field has a resource tag
-		tagValue, hasTag := fieldType.Tag.Lookup(ResourceTag)
-		if !hasTag {
-			// Skip fields without a resource tag
-			continue
-		}
-
-		// Skip primitive types
-		if isPrimitiveType(field.Type()) {
-			continue
-		}
-
-		// Make sure the field is settable (i.e., not unexported)
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
 		if !field.CanSet() {
-			return fmt.Errorf("field %s with resource tag is not settable (probably unexported)", fieldType.Name)
+			continue
 		}
 
-		// Determine the resource name to look for
-		resourceName := fieldName
-		if tagValue != "" {
-			resourceName = tagValue
+		tag := t.Field(i).Tag.Get("autowire")
+
+		if tag == "-" {
+			continue
 		}
 
-		// Check if there's a resource with the same type and name
-		depType := field.Type().String()
-		var depInstance any
-		var found bool
-
-		// First try by type and name
-		resource, exists := c.resourceMap[depType][resourceName]
-		if exists {
-			instance, ok := c.getInstance(resource)
-			if ok {
-				depInstance = instance
-				found = true
-			}
+		var options []any
+		if tag != "" {
+			options = append(options, tag)
 		}
 
-		// If not found by name, try getting the first by type
-		if !found {
-			resources, exists := c.resourceMap[depType]
-			if exists {
-				for _, resource := range resources {
-					instance, ok := c.getInstance(resource)
-					if ok {
-						depInstance = instance
-						found = true
+		dependency, err := c.Resolve(field.Type(), options...)
+		if err != nil {
+			return fmt.Errorf("failed to autowire field %s: %w", t.Field(i).Name, err)
+		}
+
+		field.Set(reflect.ValueOf(dependency))
+	}
+
+	return nil
+}
+
+func (c *Context) Destroy() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for _, implementations := range c.dependencies {
+		for _, info := range implementations {
+			if hooks, ok := info.hooks.(LifecycleHooks[any]); ok {
+				if hooks.OnDestroy != nil {
+					instance := info.instance.Load()
+					if instance != nil {
+						if err := hooks.OnDestroy(instance); err != nil {
+							return err
+						}
 					}
-					break
 				}
 			}
 		}
-
-		if !found {
-			return fmt.Errorf("dependency not found: %s (%s)", resourceName, depType)
-		}
-
-		// Null check
-		if depInstance == nil {
-			return fmt.Errorf("dependency instance is nil: %s (%s)", resourceName, depType)
-		}
-
-		// Set the field value
-		depValue := reflect.ValueOf(depInstance)
-
-		// Make sure the field is settable and types are compatible
-		if depValue.Type().AssignableTo(field.Type()) {
-			field.Set(depValue)
-		} else {
-			return fmt.Errorf("cannot assign %v to field %s of type %v", depValue.Type(), fieldType.Name, field.Type())
-		}
 	}
-
 	return nil
 }
 
-// isPrimitiveType returns true if the type is a primitive type or string
-func isPrimitiveType(t reflect.Type) bool {
-	switch t.Kind() {
-	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Float32, reflect.Float64, reflect.String:
-		return true
-	default:
-		return false
+// ClearRequestScoped clears all request-scoped dependencies
+func (c *Context) ClearRequestScoped() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for _, implementations := range c.dependencies {
+		for _, info := range implementations {
+			if info.scope == Request {
+				info.instancePool = sync.Map{}
+			}
+		}
+	}
+}
+
+// Helper functions
+func toCamelCase(s string) string {
+	if s == "" {
+		return s
+	}
+	runes := []rune(s)
+	runes[0] = unicode.ToLower(runes[0])
+	return string(runes)
+}
+
+func getDefaultName(t reflect.Type) string {
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	return toCamelCase(t.Name())
+}
+
+func getGoroutineID() uint64 {
+	return uint64(reflect.ValueOf(make(chan int)).Pointer())
+}
+
+func convertToInterfaceFunc(v reflect.Value) func(any) error {
+	if v.IsNil() {
+		return nil
+	}
+	return func(i any) error {
+		results := v.Call([]reflect.Value{reflect.ValueOf(i)})
+		if len(results) == 0 {
+			return nil
+		}
+		err, _ := results[0].Interface().(error)
+		return err
 	}
 }
 
-// initializeResources initializes all resources in dependency order
-func (c *Context) initializeResources() error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	for _, resource := range c.resources {
-		// Skip if it's not a singleton
-		if resource.Scope() != Singleton {
-			continue
-		}
-
-		// Create an instance of the resource
-		instance, err := c.createInstance(resource)
-		if err != nil {
-			return err
-		}
-
-		// Store the instance
-		resource.instance.Store(instance)
+func Resolve[T any](c *Context, options ...any) (T, error) {
+	var t T
+	instance, err := c.Resolve(reflect.TypeOf(&t).Elem(), options...)
+	if err != nil {
+		return t, err
 	}
-
-	return nil
+	return instance.(T), nil
 }
 
-// Start calls the OnStart method for all resources that haven't been started yet
-func (c *Context) Start() error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	for _, resource := range c.resources {
-		// Skip if it's not a singleton or if it doesn't have an OnStart hook
-		if resource.Scope() != Singleton || resource.hooks == nil || resource.hooks.OnStart == nil {
-			continue
-		}
-
-		// Get the instance
-		instance := resource.instance.Load()
-		if instance == nil {
-			continue
-		}
-
-		// Call OnStart hook
-		if err := resource.hooks.OnStart(instance); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// Destroy calls the OnDestroy method for all resources
-func (c *Context) Destroy() error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	// Iterate in reverse order to destroy in reverse dependency order
-	for i := len(c.resources) - 1; i >= 0; i-- {
-		resource := c.resources[i]
-
-		// Skip if it's not a singleton or if it doesn't have an OnDestroy hook
-		if resource.Scope() != Singleton || resource.hooks == nil || resource.hooks.OnDestroy == nil {
-			continue
-		}
-
-		// Get the instance
-		instance := resource.instance.Load()
-		if instance == nil {
-			continue
-		}
-
-		// Call OnDestroy hook
-		if err := resource.hooks.OnDestroy(instance); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// Name returns the name of the context
-func (c *Context) Name() string {
-	return c.name
-}
-
-// IsReady returns true if the context is ready
-func (c *Context) IsReady() bool {
-	c.mutex.RLock()
-	defer c.mutex.RUnlock()
-	return c.ready
+func AutoWire[T any](c *Context, target *T) error {
+	return c.AutoWire(target)
 }

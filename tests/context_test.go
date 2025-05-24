@@ -13,20 +13,11 @@ func TestNewContext(t *testing.T) {
 	if context.Name() != "test-context" {
 		t.Errorf("Expected context name to be 'test-context', got '%s'", context.Name())
 	}
-
-	if context.IsReady() {
-		t.Errorf("New context should not be ready")
-	}
 }
 
 func TestSimpleResourceRegistration(t *testing.T) {
-
 	// Create context and add resources
-	context := ddd.NewContext("test").WithResources(
-		ddd.NewResource[ddd.Endpoint](TestEndpoint{}),
+	ddd.NewContext("test").WithResources(
+		ddd.Resource(NewTestEndpoint),
 	)
-
-	if !context.IsReady() {
-		t.Errorf("Context should be ready after adding resources")
-	}
 }

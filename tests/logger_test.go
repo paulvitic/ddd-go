@@ -7,8 +7,7 @@ import (
 )
 
 func TestLoggerInit(t *testing.T) {
-	log := &ddd.Logger{}
-	log.OnInit()
+	log := ddd.NewLogger()
 	log.Info("testing logger info")
 	log.Warn("testing logger warning")
 	log.Error("testing logger %s", "error")
