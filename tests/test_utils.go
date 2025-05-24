@@ -35,37 +35,70 @@ func (s *DatabaseConfig) OnInit() {
 	*s = *config
 }
 
-// Test endpoint implementation for Context tests
+// TestEndpoint represents a test HTTP endpoint
 type TestEndpoint struct {
-	path     string
-	handlers map[ddd.HttpMethod]http.HandlerFunc
+	// You can inject other dependencies here if needed
+	// Logger *ddd.Logger `resource:""`
 }
 
+// NewTestEndpoint is the constructor function for TestEndpoint
 func NewTestEndpoint() *TestEndpoint {
-	return &TestEndpoint{
-		"test",
-		map[ddd.HttpMethod]http.HandlerFunc{
-			ddd.GET: func(w http.ResponseWriter, r *http.Request) {
-				response := map[string]any{
-					"message": "Test endpoint GET request successful",
-					"path":    "test",
-					"method":  "GET",
-				}
+	return &TestEndpoint{}
+}
 
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(response)
-			},
-		},
+// Path returns the endpoint's URL path - required by Endpoint interface
+func (t *TestEndpoint) Path() string {
+	return "/test"
+}
+
+// Get handles GET requests - discovered by method name convention
+func (t *TestEndpoint) Get(w http.ResponseWriter, r *http.Request) {
+	response := map[string]interface{}{
+		"message": "GET request handled successfully",
+		"path":    "/test",
+		"method":  "GET",
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
-func (e TestEndpoint) Path() string {
-	return e.path
+// Post handles POST requests - discovered by method name convention
+func (t *TestEndpoint) Post(w http.ResponseWriter, r *http.Request) {
+	response := map[string]interface{}{
+		"message": "POST request handled successfully",
+		"path":    "/test",
+		"method":  "POST",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response)
 }
 
-func (e TestEndpoint) Handlers() map[ddd.HttpMethod]http.HandlerFunc {
-	return e.handlers
+// Put handles PUT requests - discovered by method name convention
+func (t *TestEndpoint) Put(w http.ResponseWriter, r *http.Request) {
+	response := map[string]interface{}{
+		"message": "PUT request handled successfully",
+		"path":    "/test",
+		"method":  "PUT",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// Delete handles DELETE requests - discovered by method name convention
+func (t *TestEndpoint) Delete(w http.ResponseWriter, r *http.Request) {
+	response := map[string]interface{}{
+		"message": "DELETE request handled successfully",
+		"path":    "/test",
+		"method":  "DELETE",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+	// w.WriteHeader(http.StatusNoContent)
 }
 
 type Service interface {

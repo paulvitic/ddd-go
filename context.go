@@ -10,11 +10,11 @@ import (
 
 // Container represents the dependency injection container
 type Context struct {
-	Logger       *Logger                                     `autowire:""`
-	name         string                                      `autowire:"-"`
-	dependencies map[reflect.Type]map[string]*dependencyInfo `autowire:"-"`
-	mu           sync.RWMutex                                `autowire:"-"`
-	resolving    sync.Map                                    `autowire:"-"`
+	Logger       *Logger `resource:""`
+	name         string
+	dependencies map[reflect.Type]map[string]*dependencyInfo
+	mu           sync.RWMutex
+	resolving    sync.Map
 }
 
 // dependencyInfo holds information about a registered dependency
@@ -42,7 +42,7 @@ func NewContext(name string) *Context {
 	}
 	context.register(Resource(NewLogger))
 	context.AutoWire(context)
-	context.Logger.Info("New context created")
+	context.Logger.Info("Context %s created", context.name)
 	return context
 }
 
@@ -64,7 +64,32 @@ func (c *Context) WithResources(resources ...*resource) *Context {
 }
 
 func (c *Context) Endpoints() []Endpoint {
-	return make([]Endpoint, 0)
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	var endpoints []Endpoint
+
+	// Iterate through all registered dependencies to find Endpoints
+	for typ, implementations := range c.dependencies {
+		// Check if the type implements the Endpoint interface
+		endpointType := reflect.TypeOf((*Endpoint)(nil)).Elem()
+		if typ.Implements(endpointType) || reflect.PtrTo(typ).Implements(endpointType) {
+			// Resolve each implementation of this endpoint type
+			for name := range implementations {
+				endpoint, err := c.Resolve(typ, name)
+				if err != nil {
+					c.Logger.Error("Failed to resolve endpoint %s: %v", name, err)
+					continue
+				}
+
+				if ep, ok := endpoint.(Endpoint); ok {
+					endpoints = append(endpoints, ep)
+				}
+			}
+		}
+	}
+
+	return endpoints
 }
 
 func (c *Context) register(resource *resource) error {
@@ -235,9 +260,9 @@ func (c *Context) AutoWire(target any) error {
 			continue
 		}
 
-		tag := t.Field(i).Tag.Get("autowire")
+		tag, exists := t.Field(i).Tag.Lookup("resource")
 
-		if tag == "-" {
+		if !exists {
 			continue
 		}
 

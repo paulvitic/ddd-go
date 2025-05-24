@@ -1,9 +1,5 @@
 package ddd
 
-import (
-	"net/http"
-)
-
 // HttpMethod represents HTTP methods as constants
 type HttpMethod string
 
@@ -20,6 +16,4 @@ const (
 type Endpoint interface {
 	// GetPath returns the endpoint's URL path
 	Path() string
-	// GetHandlers returns a map of HTTP methods to handler functions
-	Handlers() map[HttpMethod]http.HandlerFunc
 }
