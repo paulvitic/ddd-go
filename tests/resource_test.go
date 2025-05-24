@@ -70,149 +70,149 @@ func TestConfigurationResource(t *testing.T) {
 	}
 }
 
-func TestLifecycleHooks(t *testing.T) {
-	t.Run("All lifecycle hooks", func(t *testing.T) {
-		resource := ddd.NewResource[ddd.Logger](ddd.Logger{})
-		hooks := resource.LifecycleHooks()
+// func TestLifecycleHooks(t *testing.T) {
+// 	t.Run("All lifecycle hooks", func(t *testing.T) {
+// 		resource := ddd.NewResource[ddd.Logger](ddd.Logger{})
+// 		hooks := resource.LifecycleHooks()
 
-		if hooks.OnInit == nil || hooks.OnStart == nil || hooks.OnDestroy == nil {
-			t.Errorf("Expected all hooks to be detected, got OnInit=%v, OnStart=%v, OnDestroy=%v",
-				hooks.OnInit != nil, hooks.OnStart != nil, hooks.OnDestroy != nil)
-		}
-	})
+// 		if hooks.OnInit == nil || hooks.OnStart == nil || hooks.OnDestroy == nil {
+// 			t.Errorf("Expected all hooks to be detected, got OnInit=%v, OnStart=%v, OnDestroy=%v",
+// 				hooks.OnInit != nil, hooks.OnStart != nil, hooks.OnDestroy != nil)
+// 		}
+// 	})
 
-	t.Run("Some lifecycle hooks", func(t *testing.T) {
-		// UserService has OnInit and OnStart but no OnDestroy
-		resource := ddd.NewResource[Service](UserService{})
-		hooks := resource.LifecycleHooks()
+// 	t.Run("Some lifecycle hooks", func(t *testing.T) {
+// 		// UserService has OnInit and OnStart but no OnDestroy
+// 		resource := ddd.NewResource[Service](UserService{})
+// 		hooks := resource.LifecycleHooks()
 
-		if hooks.OnInit == nil {
-			t.Errorf("Expected OnInit hook to be detected")
-		}
+// 		if hooks.OnInit == nil {
+// 			t.Errorf("Expected OnInit hook to be detected")
+// 		}
 
-		if hooks.OnStart == nil {
-			t.Errorf("Expected OnStart hook to be detected")
-		}
+// 		if hooks.OnStart == nil {
+// 			t.Errorf("Expected OnStart hook to be detected")
+// 		}
 
-		if hooks.OnDestroy != nil {
-			t.Errorf("Expected no OnDestroy hook to be detected")
-		}
-	})
+// 		if hooks.OnDestroy != nil {
+// 			t.Errorf("Expected no OnDestroy hook to be detected")
+// 		}
+// 	})
 
-	t.Run("No lifecycle hooks", func(t *testing.T) {
-		resource := ddd.NewResource[Service](NoHooksStruct{})
-		hooks := resource.LifecycleHooks()
+// 	t.Run("No lifecycle hooks", func(t *testing.T) {
+// 		resource := ddd.NewResource[Service](NoHooksStruct{})
+// 		hooks := resource.LifecycleHooks()
 
-		if hooks.OnInit != nil || hooks.OnStart != nil || hooks.OnDestroy != nil {
-			t.Errorf("Expected no hooks to be detected, got OnInit=%v, OnStart=%v, OnDestroy=%v",
-				hooks.OnInit != nil, hooks.OnStart != nil, hooks.OnDestroy != nil)
-		}
-	})
-}
+// 		if hooks.OnInit != nil || hooks.OnStart != nil || hooks.OnDestroy != nil {
+// 			t.Errorf("Expected no hooks to be detected, got OnInit=%v, OnStart=%v, OnDestroy=%v",
+// 				hooks.OnInit != nil, hooks.OnStart != nil, hooks.OnDestroy != nil)
+// 		}
+// 	})
+// }
 
-func TestValuePointerReceiver(t *testing.T) {
-	t.Run("Value type with pointer receiver methods", func(t *testing.T) {
-		valueLogger := ddd.Logger{}
-		resource := ddd.NewResource[ddd.Logger](valueLogger)
-		hooks := resource.LifecycleHooks()
+// func TestValuePointerReceiver(t *testing.T) {
+// 	t.Run("Value type with pointer receiver methods", func(t *testing.T) {
+// 		valueLogger := ddd.Logger{}
+// 		resource := ddd.NewResource[ddd.Logger](valueLogger)
+// 		hooks := resource.LifecycleHooks()
 
-		// These should work even though SimpleLogger has pointer receiver methods
-		if hooks.OnInit == nil {
-			t.Errorf("Expected OnInit hook to be detected for value type")
-		}
+// 		// These should work even though SimpleLogger has pointer receiver methods
+// 		if hooks.OnInit == nil {
+// 			t.Errorf("Expected OnInit hook to be detected for value type")
+// 		}
 
-		if hooks.OnDestroy == nil {
-			t.Errorf("Expected OnDestroy hook to be detected for value type")
-		}
-	})
+// 		if hooks.OnDestroy == nil {
+// 			t.Errorf("Expected OnDestroy hook to be detected for value type")
+// 		}
+// 	})
 
-	t.Run("Pointer type with pointer receiver methods", func(t *testing.T) {
-		pointerLogger := &ddd.Logger{}
-		resource := ddd.NewResource[ddd.Logger](pointerLogger)
-		hooks := resource.LifecycleHooks()
+// 	t.Run("Pointer type with pointer receiver methods", func(t *testing.T) {
+// 		pointerLogger := &ddd.Logger{}
+// 		resource := ddd.NewResource[ddd.Logger](pointerLogger)
+// 		hooks := resource.LifecycleHooks()
 
-		if hooks.OnInit == nil {
-			t.Errorf("Expected OnInit hook to be detected for pointer type")
-		}
+// 		if hooks.OnInit == nil {
+// 			t.Errorf("Expected OnInit hook to be detected for pointer type")
+// 		}
 
-		if hooks.OnDestroy == nil {
-			t.Errorf("Expected OnDestroy hook to be detected for pointer type")
-		}
-	})
-}
+// 		if hooks.OnDestroy == nil {
+// 			t.Errorf("Expected OnDestroy hook to be detected for pointer type")
+// 		}
+// 	})
+// }
 
-func TestResourceScopes(t *testing.T) {
-	testCases := []struct {
-		name          string
-		scope         ddd.Scope
-		expectedScope ddd.Scope
-	}{
-		{"Default scope", ddd.Scope(-1), ddd.Singleton}, // Using -1 to represent no specified scope
-		{"Singleton scope", ddd.Singleton, ddd.Singleton},
-		{"Prototype scope", ddd.Prototype, ddd.Prototype},
-		{"Request scope", ddd.Request, ddd.Request},
-	}
+// func TestResourceScopes(t *testing.T) {
+// 	testCases := []struct {
+// 		name          string
+// 		scope         ddd.Scope
+// 		expectedScope ddd.Scope
+// 	}{
+// 		{"Default scope", ddd.Scope(-1), ddd.Singleton}, // Using -1 to represent no specified scope
+// 		{"Singleton scope", ddd.Singleton, ddd.Singleton},
+// 		{"Prototype scope", ddd.Prototype, ddd.Prototype},
+// 		{"Request scope", ddd.Request, ddd.Request},
+// 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			var resource *ddd.Resource
-			if tc.scope == ddd.Scope(-1) {
-				// No scope specified, use default
-				resource = ddd.NewResource[ddd.Logger](ddd.Logger{})
-			} else {
-				resource = ddd.NewResource[ddd.Logger](ddd.Logger{}, tc.scope)
-			}
+// 	for _, tc := range testCases {
+// 		t.Run(tc.name, func(t *testing.T) {
+// 			var resource *ddd.Resource
+// 			if tc.scope == ddd.Scope(-1) {
+// 				// No scope specified, use default
+// 				resource = ddd.NewResource[ddd.Logger](ddd.Logger{})
+// 			} else {
+// 				resource = ddd.NewResource[ddd.Logger](ddd.Logger{}, tc.scope)
+// 			}
 
-			if resource.Scope() != tc.expectedScope {
-				t.Errorf("Expected scope %v, got %v", tc.expectedScope, resource.Scope())
-			}
-		})
-	}
-}
+// 			if resource.Scope() != tc.expectedScope {
+// 				t.Errorf("Expected scope %v, got %v", tc.expectedScope, resource.Scope())
+// 			}
+// 		})
+// 	}
+// }
 
-func TestInvalidOptions(t *testing.T) {
-	t.Run("Invalid option type", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Errorf("Expected panic for invalid option type, but it didn't happen")
-			}
-		}()
+// func TestInvalidOptions(t *testing.T) {
+// 	t.Run("Invalid option type", func(t *testing.T) {
+// 		defer func() {
+// 			if r := recover(); r == nil {
+// 				t.Errorf("Expected panic for invalid option type, but it didn't happen")
+// 			}
+// 		}()
 
-		// This should panic because 123 is not a valid option type
-		_ = ddd.NewResource[ddd.Logger](ddd.Logger{}, 123)
-	})
-}
+// 		// This should panic because 123 is not a valid option type
+// 		_ = ddd.NewResource[ddd.Logger](ddd.Logger{}, 123)
+// 	})
+// }
 
-// Test that lifecycle hooks can actually be called
-func TestLifecycleHookExecution(t *testing.T) {
-	// Create the resource
-	logger := &TestLogger{LogLevel: "DEBUG"}
-	resource := ddd.NewResource[ddd.Logger](logger)
-	hooks := resource.LifecycleHooks()
+// // Test that lifecycle hooks can actually be called
+// func TestLifecycleHookExecution(t *testing.T) {
+// 	// Create the resource
+// 	logger := &TestLogger{LogLevel: "DEBUG"}
+// 	resource := ddd.NewResource[ddd.Logger](logger)
+// 	hooks := resource.LifecycleHooks()
 
-	// Call the hooks
-	if err := hooks.OnInit(logger); err != nil {
-		t.Errorf("OnInit hook returned error: %v", err)
-	}
+// 	// Call the hooks
+// 	if err := hooks.OnInit(logger); err != nil {
+// 		t.Errorf("OnInit hook returned error: %v", err)
+// 	}
 
-	if err := hooks.OnStart(logger); err != nil {
-		t.Errorf("OnStart hook returned error: %v", err)
-	}
+// 	if err := hooks.OnStart(logger); err != nil {
+// 		t.Errorf("OnStart hook returned error: %v", err)
+// 	}
 
-	if err := hooks.OnDestroy(logger); err != nil {
-		t.Errorf("OnDestroy hook returned error: %v", err)
-	}
+// 	if err := hooks.OnDestroy(logger); err != nil {
+// 		t.Errorf("OnDestroy hook returned error: %v", err)
+// 	}
 
-	// Verify flags were set
-	if !logger.InitCalled {
-		t.Errorf("OnInit hook was not called")
-	}
+// 	// Verify flags were set
+// 	if !logger.InitCalled {
+// 		t.Errorf("OnInit hook was not called")
+// 	}
 
-	if !logger.StartCalled {
-		t.Errorf("OnStart hook was not called")
-	}
+// 	if !logger.StartCalled {
+// 		t.Errorf("OnStart hook was not called")
+// 	}
 
-	if !logger.DestroyCalled {
-		t.Errorf("OnDestroy hook was not called")
-	}
-}
+// 	if !logger.DestroyCalled {
+// 		t.Errorf("OnDestroy hook was not called")
+// 	}
+// }

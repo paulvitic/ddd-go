@@ -9,21 +9,19 @@ import (
 
 // Context represents the application context which manages resources
 type Context struct {
-	name            string
-	resources       []*Resource
-	resourcesByType map[string][]*Resource // map of resource type to resources
-	resourcesByName map[string]*Resource   // map of resource name to resource
-	mutex           sync.RWMutex
-	ready           bool
+	name        string
+	resources   []*Resource
+	resourceMap map[string]map[string]*Resource // map of resource type to resources
+	mutex       sync.RWMutex
+	ready       bool
 }
 
 // NewContext creates a new application context with the given name
 func NewContext(name string) *Context {
 	return &Context{
-		name:            name,
-		resources:       make([]*Resource, 0),
-		resourcesByType: make(map[string][]*Resource),
-		resourcesByName: make(map[string]*Resource),
+		name:        name,
+		resources:   make([]*Resource, 0),
+		resourceMap: make(map[string]map[string]*Resource),
 	}
 }
 
@@ -36,6 +34,8 @@ func (c *Context) WithResources(resources ...*Resource) *Context {
 	sort.Slice(c.resources, func(i, j int) bool {
 		return len(c.resources[i].Dependencies()) < len(c.resources[j].Dependencies())
 	})
+
+	c.initDeafultResources()
 
 	if err := c.initializeResources(); err != nil {
 		panic(fmt.Sprintf("Failed to initialize resources: %v", err))
@@ -75,12 +75,16 @@ func (c *Context) WithResources(resources ...*Resource) *Context {
 
 }
 
+func (c *Context) initDeafultResources() {
+	c.getInstance(NewResource[Logger]())
+}
+
 // ResourcesByType returns all resources of the given type
 func (c *Context) ResourcesByType(resourceType string) ([]any, bool) {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
 
-	resources, exists := c.resourcesByType[resourceType]
+	resources, exists := c.resourceMap[resourceType]
 	if !exists || len(resources) == 0 {
 		return nil, false
 	}
@@ -101,31 +105,31 @@ func (c *Context) ResourcesByType(resourceType string) ([]any, bool) {
 }
 
 // ResourceByName returns the resource with the given name
-func (c *Context) ResourceByName(name string) (any, bool) {
-	c.mutex.RLock()
-	defer c.mutex.RUnlock()
+// func (c *Context) ResourceByName(name string) (any, bool) {
+// 	c.mutex.RLock()
+// 	defer c.mutex.RUnlock()
 
-	resource, exists := c.resourcesByName[name]
-	if !exists {
-		return nil, false
-	}
+// 	resource, exists := c.resourcesByName[name]
+// 	if !exists {
+// 		return nil, false
+// 	}
 
-	return c.getInstance(resource)
-}
+// 	return c.getInstance(resource)
+// }
 
 // ResourceByTypeAndName returns the resource with the given type and name
-func (c *Context) ResourceByTypeAndName(resourceType, name string) (any, bool) {
+func (c *Context) ResourceByTypeAndName(resourceType string, name string) (any, bool) {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
 
 	// First try to get the resource by name
-	resource, exists := c.resourcesByName[name]
+	resource, exists := c.resourceMap[resourceType][name]
 	if exists && resource.Type() == resourceType {
 		return c.getInstance(resource)
 	}
 
 	// If not found by name, try by type and then check names
-	resources, exists := c.resourcesByType[resourceType]
+	resources, exists := c.resourceMap[resourceType]
 	if !exists {
 		return nil, false
 	}
@@ -206,7 +210,7 @@ func (c *Context) getInstance(resource *Resource) (any, bool) {
 func (c *Context) createInstance(resource *Resource) (any, error) {
 	// Clone the original value
 	value := reflect.ValueOf(resource.Value())
-	if value.Kind() == reflect.Ptr {
+	if value.Kind() == reflect.Struct {
 		// If it's a pointer, create a new instance of the pointed type
 		if value.IsNil() {
 			return nil, fmt.Errorf("cannot create instance from nil pointer")
@@ -288,8 +292,8 @@ func (c *Context) resolveDependencies(value reflect.Value) error {
 		var depInstance any
 		var found bool
 
-		// First try by name
-		resource, exists := c.resourcesByName[resourceName]
+		// First try by type and name
+		resource, exists := c.resourceMap[depType][resourceName]
 		if exists {
 			instance, ok := c.getInstance(resource)
 			if ok {
@@ -298,14 +302,17 @@ func (c *Context) resolveDependencies(value reflect.Value) error {
 			}
 		}
 
-		// If not found by name, try by type
+		// If not found by name, try getting the first by type
 		if !found {
-			resources, exists := c.resourcesByType[depType]
-			if exists && len(resources) > 0 {
-				instance, ok := c.getInstance(resources[0])
-				if ok {
-					depInstance = instance
-					found = true
+			resources, exists := c.resourceMap[depType]
+			if exists {
+				for _, resource := range resources {
+					instance, ok := c.getInstance(resource)
+					if ok {
+						depInstance = instance
+						found = true
+					}
+					break
 				}
 			}
 		}
