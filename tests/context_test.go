@@ -17,10 +17,8 @@ func TestNewContext(t *testing.T) {
 
 func TestSimpleResourceRegistration(t *testing.T) {
 	// Create context and add resources
-	context := ddd.NewContext("test").
+	ddd.NewContext("test").
 		WithResources(
 			ddd.Resource(NewTestEndpoint, ddd.Request),
 		)
-
-	context.Endpoints()
 }

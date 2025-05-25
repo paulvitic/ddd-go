@@ -90,15 +90,7 @@ func (t *TestEndpoint) Put(w http.ResponseWriter, r *http.Request) {
 
 // Delete handles DELETE requests - discovered by method name convention
 func (t *TestEndpoint) Delete(w http.ResponseWriter, r *http.Request) {
-	response := map[string]interface{}{
-		"message": "DELETE request handled successfully",
-		"path":    "/test",
-		"method":  "DELETE",
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-	// w.WriteHeader(http.StatusNoContent)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type Service interface {

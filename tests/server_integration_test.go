@@ -29,15 +29,12 @@ func TestServerLifecycle(t *testing.T) {
 
 	server := ddd.NewServer(testHost, testPort).
 		WithContexts(testContext)
-
-	// Create context for server lifecycle management
-	serverCtx, cancelServer := context.WithCancel(context.Background())
-	defer cancelServer()
+	defer server.Shutdown()
 
 	// Start server
 	serverErrors := make(chan error, 1)
 	go func() {
-		if err := server.StartWithContext(serverCtx); err != nil {
+		if err := server.Start(); err != nil {
 			serverErrors <- err
 		}
 	}()
@@ -72,7 +69,7 @@ func TestServerLifecycle(t *testing.T) {
 
 	// Cleanup: Stop server gracefully
 	t.Log("Stopping server...")
-	cancelServer()
+	server.Shutdown()
 
 	// Wait for server to shut down
 	select {

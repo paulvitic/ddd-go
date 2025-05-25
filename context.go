@@ -2,10 +2,13 @@ package ddd
 
 import (
 	"fmt"
+	"net/http"
 	"reflect"
 	"sync"
 	"sync/atomic"
 	"unicode"
+
+	"github.com/gorilla/mux"
 )
 
 // Container represents the dependency injection container
@@ -40,7 +43,7 @@ func NewContext(name string) *Context {
 		name:         name,
 		dependencies: make(map[reflect.Type]map[string]*dependencyInfo),
 	}
-	context.register(Resource(NewLogger))
+	context.registerResource(Resource(NewLogger))
 	context.AutoWire(context)
 	context.Logger.Info("Context %s created", context.name)
 	return context
@@ -56,43 +59,14 @@ func (c *Context) WithResources(resources ...*resource) *Context {
 
 	c.Logger.Info("Registering resources")
 	for _, resource := range resources {
-		if err := c.register(resource); err != nil {
+		if err := c.registerResource(resource); err != nil {
 			panic(fmt.Sprintf("failed to register resource %s: %v", resource.name, err))
 		}
 	}
 	return c
 }
 
-func (c *Context) Endpoints() []Endpoint {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	var endpoints []Endpoint
-
-	// Iterate through all registered dependencies to find Endpoints
-	for typ, implementations := range c.dependencies {
-		// Check if the type implements the Endpoint interface
-		endpointType := reflect.TypeOf((*Endpoint)(nil)).Elem()
-		if typ.Implements(endpointType) || reflect.PtrTo(typ).Implements(endpointType) {
-			// Resolve each implementation of this endpoint type
-			for name := range implementations {
-				endpoint, err := c.Resolve(typ, name)
-				if err != nil {
-					c.Logger.Error("Failed to resolve endpoint %s: %v", name, err)
-					continue
-				}
-
-				if ep, ok := endpoint.(Endpoint); ok {
-					endpoints = append(endpoints, ep)
-				}
-			}
-		}
-	}
-
-	return endpoints
-}
-
-func (c *Context) register(resource *resource) error {
+func (c *Context) registerResource(resource *resource) error {
 	typ := resource.Type()
 
 	if _, exists := c.dependencies[typ]; !exists {
@@ -106,6 +80,96 @@ func (c *Context) register(resource *resource) error {
 		instancePool: sync.Map{},
 	}
 
+	return nil
+}
+
+func (c *Context) registerEndpoints(router *mux.Router) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// Create a subrouter for the context
+	contextRouter := router.PathPrefix("/" + c.Name()).Subrouter()
+
+	// Iterate through all registered dependencies to find Endpoints
+	for typ, implementations := range c.dependencies {
+		// Check if the type implements the Endpoint interface
+		endpointType := reflect.TypeOf((*Endpoint)(nil)).Elem()
+		if typ.Implements(endpointType) || reflect.PtrTo(typ).Implements(endpointType) {
+			// Resolve each implementation of this endpoint type
+			for name, info := range implementations {
+				endpoint, err := c.Resolve(typ, name)
+				if err != nil {
+					c.Logger.Error("Failed to resolve endpoint %s: %v", name, err)
+					continue
+				}
+
+				if ep, ok := endpoint.(Endpoint); ok {
+					path := ep.Path()
+					handlers := RequestHandlers(reflect.TypeOf(endpoint))
+
+					if info.scope == Request {
+						// Create wrapper handlers for each discovered method
+						for method, methodName := range handlers {
+							wrapperHandler := func(w http.ResponseWriter, r *http.Request) {
+								// Resolve the endpoint for this specific request (creates new instance)
+								requestEndpoint, err := c.Resolve(typ, name)
+								if err != nil {
+									http.Error(w, fmt.Sprintf("Failed to resolve endpoint: %v", err), http.StatusInternalServerError)
+									return
+								}
+
+								// Get the handler method and call it
+								endpointValue := reflect.ValueOf(requestEndpoint)
+								handlerMethod := endpointValue.MethodByName(methodName)
+
+								if !handlerMethod.IsValid() {
+									http.Error(w, "Handler method not found", http.StatusInternalServerError)
+									return
+								}
+
+								// Call the handler method
+								handlerMethod.Call([]reflect.Value{
+									reflect.ValueOf(w),
+									reflect.ValueOf(r),
+								})
+
+								// Clean up request-scoped dependencies after the request
+								defer c.ClearRequestScoped()
+							}
+							contextRouter.HandleFunc(path, wrapperHandler).Methods(string(method))
+							c.Logger.Info("Registered %s handler (request-scoped) for endpoint %s in context %s", method, path, c.Name())
+						}
+
+						// Clean up the temporary instance
+						// c.ClearRequestScoped()
+					} else {
+						endpointValue := reflect.ValueOf(endpoint)
+
+						// Register handlers for each discovered method
+						for method, methodName := range handlers {
+							handlerMethod := endpointValue.MethodByName(methodName)
+							if !handlerMethod.IsValid() {
+								continue
+							}
+
+							// Create a closure that captures the handler method
+							handler := func(w http.ResponseWriter, r *http.Request) {
+								// Call the handler method directly
+								handlerMethod.Call([]reflect.Value{
+									reflect.ValueOf(w),
+									reflect.ValueOf(r),
+								})
+							}
+							contextRouter.HandleFunc(path, handler).Methods(string(method))
+							c.Logger.Info("Registered %s handler (static) for endpoint %s in context %s", method, path, c.Name())
+						}
+					}
+				} else {
+					c.Logger.Warn("Resolved object is not an Endpoint: %s", name)
+				}
+			}
+		}
+	}
 	return nil
 }
 
