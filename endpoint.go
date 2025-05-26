@@ -1,11 +1,8 @@
 package ddd
 
 import (
-	"fmt"
 	"net/http"
 	"reflect"
-
-	"github.com/gorilla/mux"
 )
 
 // HttpMethod represents HTTP methods as constants
@@ -43,7 +40,7 @@ func RequestHandlers(endpoint Endpoint) map[HttpMethod]string {
 	}
 
 	// Check each method on the type
-	for i := 0; i < typ.NumMethod(); i++ {
+	for i := range typ.NumMethod() {
 		method := typ.Method(i)
 		methodName := method.Name
 
@@ -57,51 +54,6 @@ func RequestHandlers(endpoint Endpoint) map[HttpMethod]string {
 	}
 
 	return handlers
-}
-
-func BindEndpoint(
-	endpoint Endpoint,
-	router *mux.Router,
-	name string,
-	scope Scope,
-	resolveFunc func(typ reflect.Type, options ...any) (any, error)) {
-
-	path := endpoint.Path()
-	handlers := RequestHandlers(endpoint)
-
-	if scope == Request {
-		for method, methodName := range handlers {
-			// Capture variables for closure
-			currentMethod := method
-			currentMethodName := methodName
-
-			wrapperHandler := func(w http.ResponseWriter, r *http.Request) {
-				// defer c.ClearRequestScoped()
-
-				// Resolve endpoint for this specific request
-				requestEndpoint, err := resolveFunc(reflect.TypeOf(endpoint), name)
-				if err != nil {
-					http.Error(w, fmt.Sprintf("Failed to resolve endpoint: %v", err), http.StatusInternalServerError)
-					return
-				}
-				callHandlerMethod(requestEndpoint, currentMethodName, w, r)
-			}
-
-			router.HandleFunc(path, wrapperHandler).Methods(string(currentMethod))
-		}
-	} else {
-		for method, methodName := range handlers {
-			// Capture variables for closure
-			currentMethod := method
-			currentMethodName := methodName
-
-			handler := func(w http.ResponseWriter, r *http.Request) {
-				callHandlerMethod(endpoint, currentMethodName, w, r)
-			}
-
-			router.HandleFunc(path, handler).Methods(string(currentMethod))
-		}
-	}
 }
 
 func callHandlerMethod(endpoint any, methodName string, w http.ResponseWriter, r *http.Request) {

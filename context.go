@@ -363,21 +363,13 @@ func (c *Context) ClearRequestScoped(rsc *resource, id uuid.UUID) {
 	}
 }
 
-// Helper functions
-func toCamelCase(s string) string {
-	if s == "" {
-		return s
-	}
-	runes := []rune(s)
-	runes[0] = unicode.ToLower(runes[0])
-	return string(runes)
-}
-
 func getDefaultName(t reflect.Type) string {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
-	return toCamelCase(t.Name())
+	runes := []rune(t.Name())
+	runes[0] = unicode.ToLower(runes[0])
+	return string(runes)
 }
 
 // Generic method to resolve all instances of a specific interface
