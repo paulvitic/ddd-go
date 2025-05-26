@@ -114,11 +114,12 @@ func (s *Server) registerHealthCheck() {
 	s.router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Status: UP")
 	}).Methods("GET")
+
 	s.logger.Info("Registered health check endpoint at /")
 }
 
 func (s *Server) bindEndpoins() {
 	for _, context := range s.contexts {
-		context.bindEndpoints(s.router)
+		context.BindEndpoints(s.router)
 	}
 }

@@ -2,7 +2,6 @@ package ddd
 
 import (
 	"fmt"
-	"net/http"
 	"reflect"
 	"sync"
 	"unicode"
@@ -57,12 +56,12 @@ func (c *Context) registerResource(rsc *resource) {
 	c.resources[typ][rsc.Name()] = rsc
 }
 
-func (c *Context) bindEndpoints(router *mux.Router) error {
+func (c *Context) BindEndpoints(router *mux.Router) error {
 	// Create a subrouter for the context
 	router = router.PathPrefix("/" + c.Name()).Subrouter()
 
 	// Resolve all resources using the generic method
-	resources := ReourcesByType[Endpoint](c)
+	resources := ResourcesByType[Endpoint](c)
 
 	// Bind each endpoint
 	for name, resource := range resources {
@@ -74,67 +73,28 @@ func (c *Context) bindEndpoints(router *mux.Router) error {
 			if endpoint, ok := endpoint.(Endpoint); !ok {
 				c.Logger.Error("resource is not of type Endpoint")
 			} else {
-				path := endpoint.Path()
-				handlers := RequestHandlers(endpoint)
-
 				if resource.scope == Request {
-					for method, methodName := range handlers {
-						// Capture variables for closure
-						currentMethod := method
-						currentMethodName := methodName
-
-						wrapperHandler := func(w http.ResponseWriter, r *http.Request) {
-							key := uuid.New()
-							defer c.ClearRequestScoped(resource, key)
-
-							// Resolve endpoint for this specific request
-							requestEndpoint, err := c.Resolve(resource.Type(), key)
-							if err != nil {
-								http.Error(w, fmt.Sprintf("Failed to resolve endpoint: %v", err), http.StatusInternalServerError)
-								return
-							}
-							callHandlerMethod(requestEndpoint, currentMethodName, w, r)
+					resolveFunc := func(key uuid.UUID) (any, error) {
+						if rcEndpoint, err := c.Resolve(resource.Type(), key); err != nil {
+							return nil, err
+						} else {
+							return rcEndpoint, nil
 						}
-
-						router.HandleFunc(path, wrapperHandler).Methods(string(currentMethod))
 					}
+					destroFunc := func(key uuid.UUID) {
+						c.ClearRequestScoped(resource, key)
+					}
+
+					BindRequestScopedEndpoint(endpoint, router, resolveFunc, destroFunc)
+
 				} else {
-					for method, methodName := range handlers {
-						// Capture variables for closure
-						currentMethod := method
-						currentMethodName := methodName
-
-						handler := func(w http.ResponseWriter, r *http.Request) {
-							callHandlerMethod(endpoint, currentMethodName, w, r)
-						}
-
-						router.HandleFunc(path, handler).Methods(string(currentMethod))
-					}
+					BindEndpoint(endpoint, router)
 				}
 			}
 		}
 	}
 
 	return nil
-}
-
-// gets resource by type and name
-func (c *Context) getResource(typ reflect.Type, name string) (*resource, error) {
-	resources, exists := c.resources[typ]
-	if !exists {
-		return nil, fmt.Errorf("no dependency registered for type %v", typ)
-	}
-
-	if name == "" {
-		name = getDefaultName(typ)
-	}
-
-	resource, exists := resources[name]
-	if !exists {
-		return nil, fmt.Errorf("no dependency named '%s' registered for type %v", name, typ)
-	}
-
-	return resource, nil
 }
 
 // Resolve resolves a dependency from the container
@@ -174,98 +134,6 @@ func (c *Context) Resolve(typ reflect.Type, options ...any) (any, error) {
 	default:
 		return nil, fmt.Errorf("unknown scope: %v", resource.scope)
 	}
-}
-
-func (c *Context) parseResolveOptions(options ...any) (string, uuid.UUID) {
-	var name string
-	var key uuid.UUID
-
-	for _, option := range options {
-		switch v := option.(type) {
-		case string:
-			name = v
-		case uuid.UUID:
-			key = v
-		}
-	}
-
-	return name, key
-}
-
-func (c *Context) resolveSingleton(info *resource) (any, error) {
-	var err error
-	info.initOnce.Do(func() {
-		var instance any
-		instance, err = c.construct(info)
-		if err == nil {
-			info.instance.Store(instance)
-		}
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return info.instance.Load(), nil
-}
-
-// Store the instance in the resource's instancePool by a uuid key
-// The key represents a request ID, goroutine ID, or other identifier
-func (c *Context) resolveRequest(info *resource, key uuid.UUID) (any, error) {
-
-	if instance, ok := info.instancePool.Load(key); ok {
-		return instance, nil
-	}
-
-	instance, err := c.construct(info)
-	if err != nil {
-		return nil, err
-	}
-
-	info.instancePool.Store(key, instance)
-	return instance, nil
-}
-
-func (c *Context) construct(resource *resource) (any, error) {
-	params, err := c.resolveFactoryParams(resource.factory.Type())
-	if err != nil {
-		return nil, err
-	}
-
-	results := resource.factory.Call(params)
-	if len(results) == 2 && !results[1].IsNil() {
-		return nil, results[1].Interface().(error)
-	}
-
-	instance := results[0].Interface()
-
-	if hooks, ok := resource.hooks.(LifecycleHooks[any]); ok {
-		if hooks.OnInit != nil {
-			if err := hooks.OnInit(instance); err != nil {
-				return nil, err
-			}
-		}
-		if hooks.OnStart != nil {
-			if err := hooks.OnStart(instance); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	return instance, nil
-}
-
-func (c *Context) resolveFactoryParams(factoryType reflect.Type) ([]reflect.Value, error) {
-	params := make([]reflect.Value, factoryType.NumIn())
-	for i := 0; i < factoryType.NumIn(); i++ {
-		paramType := factoryType.In(i)
-		param, err := c.Resolve(paramType)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve parameter %d of type %v: %w", i, paramType, err)
-		}
-		params[i] = reflect.ValueOf(param)
-	}
-	return params, nil
 }
 
 // AutoWire automatically injects dependencies into the fields of the given struct
@@ -363,6 +231,117 @@ func (c *Context) ClearRequestScoped(rsc *resource, id uuid.UUID) {
 	}
 }
 
+func (c *Context) parseResolveOptions(options ...any) (string, uuid.UUID) {
+	var name string
+	var key uuid.UUID
+
+	for _, option := range options {
+		switch v := option.(type) {
+		case string:
+			name = v
+		case uuid.UUID:
+			key = v
+		}
+	}
+
+	return name, key
+}
+
+// gets resource by type and name
+func (c *Context) getResource(typ reflect.Type, name string) (*resource, error) {
+	resources, exists := c.resources[typ]
+	if !exists {
+		return nil, fmt.Errorf("no dependency registered for type %v", typ)
+	}
+
+	if name == "" {
+		name = getDefaultName(typ)
+	}
+
+	resource, exists := resources[name]
+	if !exists {
+		return nil, fmt.Errorf("no dependency named '%s' registered for type %v", name, typ)
+	}
+
+	return resource, nil
+}
+
+func (c *Context) resolveSingleton(info *resource) (any, error) {
+	var err error
+	info.initOnce.Do(func() {
+		var instance any
+		instance, err = c.construct(info)
+		if err == nil {
+			info.instance.Store(instance)
+		}
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return info.instance.Load(), nil
+}
+
+// Store the instance in the resource's instancePool by a uuid key
+// The key represents a request ID, goroutine ID, or other identifier
+func (c *Context) resolveRequest(info *resource, key uuid.UUID) (any, error) {
+
+	if instance, ok := info.instancePool.Load(key); ok {
+		return instance, nil
+	}
+
+	instance, err := c.construct(info)
+	if err != nil {
+		return nil, err
+	}
+
+	info.instancePool.Store(key, instance)
+	return instance, nil
+}
+
+func (c *Context) construct(resource *resource) (any, error) {
+	params, err := c.resolveFactoryParams(resource.factory.Type())
+	if err != nil {
+		return nil, err
+	}
+
+	results := resource.factory.Call(params)
+	if len(results) == 2 && !results[1].IsNil() {
+		return nil, results[1].Interface().(error)
+	}
+
+	instance := results[0].Interface()
+
+	if hooks, ok := resource.hooks.(LifecycleHooks[any]); ok {
+		if hooks.OnInit != nil {
+			if err := hooks.OnInit(instance); err != nil {
+				return nil, err
+			}
+		}
+		if hooks.OnStart != nil {
+			if err := hooks.OnStart(instance); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return instance, nil
+}
+
+func (c *Context) resolveFactoryParams(factoryType reflect.Type) ([]reflect.Value, error) {
+	params := make([]reflect.Value, factoryType.NumIn())
+	for i := 0; i < factoryType.NumIn(); i++ {
+		paramType := factoryType.In(i)
+		param, err := c.Resolve(paramType)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve parameter %d of type %v: %w", i, paramType, err)
+		}
+		params[i] = reflect.ValueOf(param)
+	}
+	return params, nil
+}
+
 func getDefaultName(t reflect.Type) string {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -372,8 +351,11 @@ func getDefaultName(t reflect.Type) string {
 	return string(runes)
 }
 
-// Generic method to resolve all instances of a specific interface
-func ReourcesByType[T any](c *Context) map[string]*resource {
+// ==========================================================
+// Generic functions
+// ==========================================================
+// to resolve all instances of a specific interface
+func ResourcesByType[T any](c *Context) map[string]*resource {
 	targetType := reflect.TypeOf((*T)(nil)).Elem()
 
 	results := make(map[string]*resource)

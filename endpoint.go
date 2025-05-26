@@ -1,8 +1,12 @@
 package ddd
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
+
+	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 )
 
 // HttpMethod represents HTTP methods as constants
@@ -19,11 +23,59 @@ const (
 )
 
 type Endpoint interface {
-	// GetPath returns the endpoint's URL path
+	// Path returns the endpoint's URL path
 	Path() string
 }
 
-func RequestHandlers(endpoint Endpoint) map[HttpMethod]string {
+func BindEndpoint(endpoint Endpoint, router *mux.Router) {
+	path := endpoint.Path()
+	handlers := requestHandlers(endpoint)
+
+	for method, methodName := range handlers {
+		// Capture variables for closure
+		currentMethod := method
+		currentMethodName := methodName
+
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			callHandlerMethod(endpoint, currentMethodName, w, r)
+		}
+
+		router.HandleFunc(path, handler).Methods(string(currentMethod))
+	}
+}
+
+func BindRequestScopedEndpoint(
+	endpoint Endpoint,
+	router *mux.Router,
+	resolveFunc func(key uuid.UUID) (any, error),
+	destroyFunc func(key uuid.UUID)) {
+
+	path := endpoint.Path()
+	handlers := requestHandlers(endpoint)
+
+	for method, methodName := range handlers {
+		// Capture variables for closure
+		currentMethod := method
+		currentMethodName := methodName
+
+		wrapperHandler := func(w http.ResponseWriter, r *http.Request) {
+			key := uuid.New()
+			defer destroyFunc(key)
+
+			// Resolve endpoint for this specific request
+			rsEndpoint, err := resolveFunc(key)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to resolve endpoint: %v", err), http.StatusInternalServerError)
+				return
+			}
+			callHandlerMethod(rsEndpoint, currentMethodName, w, r)
+		}
+
+		router.HandleFunc(path, wrapperHandler).Methods(string(currentMethod))
+	}
+}
+
+func requestHandlers(endpoint Endpoint) map[HttpMethod]string {
 	typ := reflect.TypeOf(endpoint)
 
 	handlers := make(map[HttpMethod]string)
