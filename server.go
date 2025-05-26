@@ -46,9 +46,9 @@ func (s *Server) Router() *mux.Router {
 // Start initializes and starts the server
 func (s *Server) Start() error {
 
-	s.registerContextEndpoints()
+	s.bindEndpoins()
 	// Register health check endpoint
-	s.registerHealthCheckEndpoint()
+	s.registerHealthCheck()
 
 	// Create HTTP server
 	addr := fmt.Sprintf("%s:%d", s.host, s.port)
@@ -109,16 +109,16 @@ func (s *Server) Shutdown() error {
 	return nil
 }
 
-// registerHealthCheckEndpoint registers the health check endpoint
-func (s *Server) registerHealthCheckEndpoint() {
+// registerHealthCheck registers the health check endpoint
+func (s *Server) registerHealthCheck() {
 	s.router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Status: UP")
 	}).Methods("GET")
 	s.logger.Info("Registered health check endpoint at /")
 }
 
-func (s *Server) registerContextEndpoints() {
-	for _, appCtx := range s.contexts {
-		appCtx.registerEndpoints(s.Router())
+func (s *Server) bindEndpoins() {
+	for _, context := range s.contexts {
+		context.bindEndpoints(s.router)
 	}
 }

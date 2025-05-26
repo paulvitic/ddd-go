@@ -2,6 +2,8 @@ package ddd
 
 import (
 	"reflect"
+	"sync"
+	"sync/atomic"
 )
 
 // Scope represents the lifecycle of a dependency
@@ -14,37 +16,48 @@ const (
 )
 
 type resource struct {
-	value        any
-	resourceType reflect.Type
+	factory      reflect.Value
+	typ          reflect.Type
 	name         string
 	scope        Scope
+	instance     atomic.Value
+	initOnce     sync.Once
 	hooks        any
+	instancePool sync.Map
 }
 
-func Resource(constructor any, options ...any) *resource {
-	constructorType := reflect.TypeOf(constructor)
-	if constructorType.Kind() != reflect.Func {
+// LifecycleHooks defines lifecycle hooks for dependencies
+type LifecycleHooks[T any] struct {
+	OnInit    func(T) error
+	OnStart   func(T) error
+	OnDestroy func(T) error
+}
+
+func Resource(factory any, options ...any) *resource {
+	factoryType := reflect.TypeOf(factory)
+	if factoryType.Kind() != reflect.Func {
 		panic("constructor must be a function")
 	}
 
-	if constructorType.NumOut() == 0 || (constructorType.NumOut() == 2 && !constructorType.Out(1).Implements(reflect.TypeOf((*error)(nil)).Elem())) {
+	if factoryType.NumOut() == 0 || (factoryType.NumOut() == 2 && !factoryType.Out(1).Implements(reflect.TypeOf((*error)(nil)).Elem())) {
 		panic("constructor must return (T) or (T, error)")
 	}
 
-	typ := constructorType.Out(0)
+	typ := factoryType.Out(0)
 	name, scope, hooks := processOptions(typ, options...)
 
 	return &resource{
-		value:        constructor,
-		resourceType: typ,
+		factory:      reflect.ValueOf(factory),
+		typ:          typ,
 		name:         name,
 		scope:        scope,
 		hooks:        hooks,
+		instancePool: sync.Map{},
 	}
 }
 
-func (r *resource) Value() any {
-	return r.value
+func (r *resource) Factory() any {
+	return r.factory
 }
 
 func (r *resource) Name() string {
@@ -52,7 +65,7 @@ func (r *resource) Name() string {
 }
 
 func (r *resource) Type() reflect.Type {
-	return r.resourceType
+	return r.typ
 }
 
 func (r *resource) Scope() Scope {
@@ -82,6 +95,20 @@ func processOptions(typ reflect.Type, options ...any) (string, Scope, any) {
 	}
 
 	return name, scope, hooks
+}
+
+func convertToInterfaceFunc(v reflect.Value) func(any) error {
+	if v.IsNil() {
+		return nil
+	}
+	return func(i any) error {
+		results := v.Call([]reflect.Value{reflect.ValueOf(i)})
+		if len(results) == 0 {
+			return nil
+		}
+		err, _ := results[0].Interface().(error)
+		return err
+	}
 }
 
 func isLifecycleHooks(v any) (LifecycleHooks[any], bool) {
