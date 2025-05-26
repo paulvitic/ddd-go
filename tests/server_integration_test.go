@@ -29,27 +29,27 @@ func TestServerLifecycle(t *testing.T) {
 
 	server := ddd.NewServer(testHost, testPort).
 		WithContexts(testContext)
-	defer server.Shutdown()
 
 	// Start server
-	serverErrors := make(chan error, 1)
+	serverDone := make(chan error, 1)
 	go func() {
-		if err := server.Start(); err != nil {
-			serverErrors <- err
-		}
+		// This will block until server is shut down
+		err := server.Start()
+		serverDone <- err
 	}()
 
 	// Wait for server to be ready
 	if !waitForServer(baseURL, 5*time.Second) {
+		server.Shutdown() // Clean up
 		t.Fatal("Server failed to start within timeout")
 	}
 
-	// Check for early server errors
+	// Check for early server errors (non-blocking check)
 	select {
-	case err := <-serverErrors:
+	case err := <-serverDone:
 		t.Fatalf("Server failed to start: %v", err)
 	default:
-		// Server is running
+		// Server is running normally
 	}
 
 	// Run all endpoint tests
@@ -69,15 +69,25 @@ func TestServerLifecycle(t *testing.T) {
 
 	// Cleanup: Stop server gracefully
 	t.Log("Stopping server...")
-	server.Shutdown()
-
-	// Wait for server to shut down
-	select {
-	case <-serverErrors:
-		t.Log("Server shut down successfully")
-	case <-time.After(10 * time.Second):
-		t.Error("Server shutdown timed out")
+	if err := server.Shutdown(); err != nil {
+		t.Errorf("Server shutdown failed: %v", err)
 	}
+
+	// Wait for server to actually shut down
+	select {
+	case err := <-serverDone:
+		if err != nil {
+			t.Logf("Server stopped with error: %v", err)
+		} else {
+			t.Log("Server shut down successfully")
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("Server shutdown timed out")
+		return
+	}
+
+	// Give a moment for the port to be released
+	time.Sleep(100 * time.Millisecond)
 
 	// Verify server is actually stopped
 	if serverStillRunning(baseURL) {

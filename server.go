@@ -18,17 +18,23 @@ type Server struct {
 	contexts   []*Context
 	router     *mux.Router
 	httpServer *http.Server
+	// Add context and cancel function for proper shutdown
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // NewServer creates a new server instance
 // TODO: Use a Configuration with host port and active contexts
 func NewServer(host string, port int) *Server {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
 		logger:   NewLogger(),
 		port:     port,
 		host:     host,
 		contexts: make([]*Context, 0),
 		router:   mux.NewRouter(),
+		ctx:      ctx,
+		cancel:   cancel,
 	}
 }
 
@@ -67,7 +73,6 @@ func (s *Server) Start() error {
 		serverErrors <- s.httpServer.ListenAndServe()
 	}()
 
-	serverCtx := context.Background()
 	// Wait for either context cancellation or server error
 	select {
 	case err := <-serverErrors:
@@ -75,13 +80,22 @@ func (s *Server) Start() error {
 			return fmt.Errorf("server error: %w", err)
 		}
 		return nil
-	case <-serverCtx.Done():
-		return s.Shutdown()
+	case <-s.ctx.Done():
+		return s.shutdownHTTPServer()
 	}
 }
 
 // Shutdown gracefully shuts down the server
 func (s *Server) Shutdown() error {
+	if s.cancel != nil {
+		// Cancel the context to signal Start() to exit
+		s.cancel()
+	}
+	return nil
+}
+
+// shutdownHTTPServer handles the actual HTTP server shutdown
+func (s *Server) shutdownHTTPServer() error {
 	if s.httpServer == nil {
 		return nil
 	}
