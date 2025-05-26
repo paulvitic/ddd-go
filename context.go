@@ -66,6 +66,7 @@ func (c *Context) bindEndpoints(router *mux.Router) error {
 
 	// Bind each endpoint
 	for name, resource := range resources {
+		// contruct the enspoint to get the path and handlers
 		if endpoint, err := c.construct(resource); err != nil {
 			c.Logger.Error("can not contruct endpoint %s", name)
 
@@ -84,7 +85,7 @@ func (c *Context) bindEndpoints(router *mux.Router) error {
 
 						wrapperHandler := func(w http.ResponseWriter, r *http.Request) {
 							key := uuid.New()
-							defer c.ClearRequestScopedByID(resource, key)
+							defer c.ClearRequestScoped(resource, key)
 
 							// Resolve endpoint for this specific request
 							requestEndpoint, err := c.Resolve(resource.Type(), key)
@@ -208,9 +209,8 @@ func (c *Context) resolveSingleton(info *resource) (any, error) {
 	return info.instance.Load(), nil
 }
 
-// Store the instance in the resource's instancePool
-// Need a key of type uint64 for the sync.Map
-// The key could be a request ID, goroutine ID, or other identifier
+// Store the instance in the resource's instancePool by a uuid key
+// The key represents a request ID, goroutine ID, or other identifier
 func (c *Context) resolveRequest(info *resource, key uuid.UUID) (any, error) {
 
 	if instance, ok := info.instancePool.Load(key); ok {
@@ -255,10 +255,10 @@ func (c *Context) construct(resource *resource) (any, error) {
 	return instance, nil
 }
 
-func (c *Context) resolveFactoryParams(constructorType reflect.Type) ([]reflect.Value, error) {
-	params := make([]reflect.Value, constructorType.NumIn())
-	for i := 0; i < constructorType.NumIn(); i++ {
-		paramType := constructorType.In(i)
+func (c *Context) resolveFactoryParams(factoryType reflect.Type) ([]reflect.Value, error) {
+	params := make([]reflect.Value, factoryType.NumIn())
+	for i := 0; i < factoryType.NumIn(); i++ {
+		paramType := factoryType.In(i)
 		param, err := c.Resolve(paramType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve parameter %d of type %v: %w", i, paramType, err)
@@ -328,21 +328,21 @@ func (c *Context) Destroy() error {
 }
 
 // ClearRequestScoped clears all request-scoped dependencies
-func (c *Context) ClearRequestScoped() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	for _, implementations := range c.resources {
-		for _, info := range implementations {
-			if info.scope == Request {
-				info.instancePool = sync.Map{}
+func (c *Context) ClearAllRequestScoped() {
+	for _, resources := range c.resources {
+		for _, resource := range resources {
+			if resource.scope == Request {
+				resource.instancePool.Range(func(key, value interface{}) bool {
+					c.ClearRequestScoped(resource, key.(uuid.UUID))
+					return true
+				})
 			}
 		}
 	}
 }
 
 // ClearRequestScopedByID clears request-scoped dependencies for a specific ID
-func (c *Context) ClearRequestScopedByID(rsc *resource, id uuid.UUID) {
+func (c *Context) ClearRequestScoped(rsc *resource, id uuid.UUID) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -360,7 +360,6 @@ func (c *Context) ClearRequestScopedByID(rsc *resource, id uuid.UUID) {
 			// Remove the instance from the pool
 			resource.instancePool.Delete(id)
 		}
-
 	}
 }
 
