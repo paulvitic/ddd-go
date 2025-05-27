@@ -63,7 +63,7 @@ func verifyFilePath(fileName string) (string, bool, error) {
 	defer func(file *os.File) {
 		closeErr := file.Close()
 		if closeErr != nil {
-			panic(fmt.Errorf("Failed to close config file %s: %s", filePath, closeErr))
+			panic(fmt.Errorf("failed to close config file %s: %s", filePath, closeErr))
 		}
 	}(file)
 

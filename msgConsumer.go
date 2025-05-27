@@ -14,9 +14,6 @@ type MessageSourceKey struct{}
 // MessageConsumer represents a component that consumes messages from an external source
 // and translates them into domain events for processing by the application.
 type MessageConsumer interface {
-	// ContextResource ensures MessageConsumer can be managed by the Context
-	ContextResource
-
 	// Target returns the name/identifier of the source this consumer targets
 	Target() string
 
@@ -135,29 +132,9 @@ func (c *baseMessageConsumer) ProcessMessage(ctx context.Context, msg []byte) er
 	return c.eventBus.Dispatch(msgCtx, event)
 }
 
-// ResourceName returns the resource name for the Context
-func (c *baseMessageConsumer) ResourceName() ResourceName {
-	return ResourceName("message_consumer_" + c.target)
-}
-
-// ResourceType returns the resource type for the Context
-func (c *baseMessageConsumer) ResourceType() ResourceType {
-	return ResourceType("MessageConsumer")
-}
-
-// Dependencies returns the dependencies for the Context
-func (c *baseMessageConsumer) Dependencies() []Dependency {
-	return []Dependency{
-		{
-			Name: "event_bus",
-			Type: "EventBus",
-		},
-	}
-}
-
-//----------------------------------------------------------
+//-------------------------------------------------------------
 // InMemoryMessageConsumer for channel-based message transport
-//----------------------------------------------------------
+//-------------------------------------------------------------
 
 // InMemoryMessageConsumer is a MessageConsumer that reads from an in-memory channel
 type InMemoryMessageConsumer struct {

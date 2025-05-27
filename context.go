@@ -12,7 +12,7 @@ import (
 
 // Container represents the dependency injection container
 type Context struct {
-	Logger    *Logger `resource:""`
+	log       *Logger `resource:""`
 	name      string
 	resources map[reflect.Type]map[string]*resource
 	mu        sync.RWMutex
@@ -22,12 +22,13 @@ type Context struct {
 // NewContext creates a new Container
 func NewContext(name string) *Context {
 	context := &Context{
+		log:       NewLogger(),
 		name:      name,
 		resources: make(map[reflect.Type]map[string]*resource),
 	}
 	context.registerResource(Resource(NewLogger))
-	context.AutoWire(context)
-	context.Logger.Info("Context %s created", context.name)
+	// context.AutoWire(context)
+	context.log.Info("Context %s created", context.name)
 	return context
 }
 
@@ -39,7 +40,7 @@ func (c *Context) WithResources(resources ...*resource) *Context {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.Logger.Info("Registering resources")
+	c.log.Info("Registering resources")
 	for _, resource := range resources {
 		c.registerResource(resource)
 	}
@@ -67,11 +68,11 @@ func (c *Context) BindEndpoints(router *mux.Router) error {
 	for name, resource := range resources {
 		// contruct the enspoint to get the path and handlers
 		if endpoint, err := c.construct(resource); err != nil {
-			c.Logger.Error("can not contruct endpoint %s", name)
+			c.log.Error("can not contruct endpoint %s", name)
 
 		} else {
 			if endpoint, ok := endpoint.(Endpoint); !ok {
-				c.Logger.Error("resource is not of type Endpoint")
+				c.log.Error("resource is not of type Endpoint")
 			} else {
 				if resource.scope == Request {
 					resolveFunc := func(key uuid.UUID) (any, error) {
@@ -218,7 +219,7 @@ func (c *Context) ClearRequestScoped(rsc *resource, id uuid.UUID) {
 	resource, err := c.getResource(rsc.Type(), rsc.Name())
 	if err != nil {
 		// If we can't get the resource, log and return
-		c.Logger.Error("Error getting resource for cleanup: %v", err)
+		c.log.Error("Error getting resource for cleanup: %v", err)
 		return
 	}
 
@@ -227,7 +228,7 @@ func (c *Context) ClearRequestScoped(rsc *resource, id uuid.UUID) {
 		if hooks, ok := resource.hooks.(LifecycleHooks[any]); ok {
 			if hooks.OnDestroy != nil {
 				if err := hooks.OnDestroy(instance); err != nil {
-					c.Logger.Error("Error during OnDestroy hook for request-scoped dependency: %v", err)
+					c.log.Error("Error during OnDestroy hook for request-scoped dependency: %v", err)
 				}
 			}
 		}
