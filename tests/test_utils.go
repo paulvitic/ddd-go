@@ -11,7 +11,7 @@ type SomeStruct struct{}
 type SomeDependencyInterface interface{}
 type SomeDependencyStruct struct{}
 type SomeStructRepo struct {
-	logger                  ddd.Logger              `resource:""`
+	Logger                  ddd.Logger              `resource:""`
 	someDependencyInterface SomeDependencyInterface `resource:""`
 	someDependencyStruct    SomeDependencyStruct    `resource:"customDepenedencyName"`
 	someDependencyPointer   *SomeDependencyStruct   `resource:""`
@@ -38,7 +38,7 @@ func (s *DatabaseConfig) OnInit() {
 // TestEndpoint represents a test HTTP endpoint
 type TestEndpoint struct {
 	// You can inject other dependencies here if needed
-	// Logger *ddd.Logger `resource:""`
+	Logger *ddd.Logger `resource:""`
 }
 
 // NewTestEndpoint is the constructor function for TestEndpoint
@@ -65,6 +65,7 @@ func (t *TestEndpoint) Get(w http.ResponseWriter, r *http.Request) {
 
 // Post handles POST requests - discovered by method name convention
 func (t *TestEndpoint) Post(w http.ResponseWriter, r *http.Request) {
+	t.Logger.Info("Test endpoint post method called")
 	response := map[string]interface{}{
 		"message": "POST request handled successfully",
 		"path":    "/test",

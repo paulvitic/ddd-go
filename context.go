@@ -148,6 +148,7 @@ func (c *Context) AutoWire(target any) error {
 
 	for i := range v.NumField() {
 		field := v.Field(i)
+		// TODO should it be a settable property?
 		if !field.CanSet() {
 			continue
 		}
@@ -216,18 +217,22 @@ func (c *Context) ClearRequestScoped(rsc *resource, id uuid.UUID) {
 
 	resource, err := c.getResource(rsc.Type(), rsc.Name())
 	if err != nil {
-		if instance, exists := resource.instancePool.Load(id); exists {
-			// Run destroy hooks if they exist
-			if hooks, ok := resource.hooks.(LifecycleHooks[any]); ok {
-				if hooks.OnDestroy != nil {
-					if err := hooks.OnDestroy(instance); err != nil {
-						c.Logger.Error("Error during OnDestroy hook for request-scoped dependency: %v", err)
-					}
+		// If we can't get the resource, log and return
+		c.Logger.Error("Error getting resource for cleanup: %v", err)
+		return
+	}
+
+	if instance, exists := resource.instancePool.Load(id); exists {
+		// Run destroy hooks if they exist
+		if hooks, ok := resource.hooks.(LifecycleHooks[any]); ok {
+			if hooks.OnDestroy != nil {
+				if err := hooks.OnDestroy(instance); err != nil {
+					c.Logger.Error("Error during OnDestroy hook for request-scoped dependency: %v", err)
 				}
 			}
-			// Remove the instance from the pool
-			resource.instancePool.Delete(id)
 		}
+		// Remove the instance from the pool
+		resource.instancePool.Delete(id)
 	}
 }
 
@@ -312,6 +317,11 @@ func (c *Context) construct(resource *resource) (any, error) {
 	}
 
 	instance := results[0].Interface()
+
+	// AutoWire dependencies after construction - THIS WAS MISSING!
+	if err := c.AutoWire(instance); err != nil {
+		return nil, fmt.Errorf("failed to autowire dependencies: %w", err)
+	}
 
 	if hooks, ok := resource.hooks.(LifecycleHooks[any]); ok {
 		if hooks.OnInit != nil {

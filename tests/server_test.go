@@ -282,7 +282,7 @@ func testRequestScoping(t *testing.T) {
 	}
 
 	// Collect all responses
-	for i := 0; i < numRequests; i++ {
+	for range numRequests {
 		select {
 		case err := <-errors:
 			t.Fatalf("Request failed: %v", err)
