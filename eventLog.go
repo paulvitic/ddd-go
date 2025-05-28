@@ -32,6 +32,14 @@ type inMemoryEventLog struct {
 	log   map[string][]Event
 }
 
+// NewInMemoryEventLog creates a new in-memory event log
+func NewInMemoryEventLog(config InMemoryEventLogConfig) EventLog {
+	return &inMemoryEventLog{
+		queue: make(chan Event, config.BufferSize),
+		log:   make(map[string][]Event),
+	}
+}
+
 // EventsOf returns all events for an aggregate
 func (e *inMemoryEventLog) EventsOf(aggregateID, aggregateType string) []Event {
 	eventKey := aggregateType + ":" + aggregateID
@@ -85,12 +93,4 @@ func (e *inMemoryEventLog) AppendFrom(ctx context.Context, aggregate Aggregate) 
 // Queue returns the underlying event queue
 func (e *inMemoryEventLog) Queue() any {
 	return &e.queue
-}
-
-// NewInMemoryEventLog creates a new in-memory event log
-func NewInMemoryEventLog(config InMemoryEventLogConfig) EventLog {
-	return &inMemoryEventLog{
-		queue: make(chan Event, config.BufferSize),
-		log:   make(map[string][]Event),
-	}
 }

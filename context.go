@@ -28,9 +28,6 @@ func NewContext(name string) *Context {
 	}
 	context.log.Info("%s context created", context.name)
 
-	context.log.Info("Registering default resources")
-	context.registerDefaultResources()
-
 	return context
 }
 
@@ -42,6 +39,8 @@ func (c *Context) WithResources(resources ...*resource) *Context {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	c.registerDefaultResources()
+
 	c.log.Info("Registering resources")
 	for _, resource := range resources {
 		c.registerResource(resource)
@@ -50,6 +49,7 @@ func (c *Context) WithResources(resources ...*resource) *Context {
 }
 
 func (c *Context) registerDefaultResources() {
+	c.log.Info("Registering default resources")
 	c.registerResource(Resource(NewLogger))
 	c.registerResource(Resource(NewCommandBus))
 }
@@ -91,11 +91,11 @@ func (c *Context) BindEndpoints(router *mux.Router) error {
 							return rcEndpoint, nil
 						}
 					}
-					destroFunc := func(key uuid.UUID) {
+					destroyFunc := func(key uuid.UUID) {
 						c.ClearRequestScoped(resource, key)
 					}
 
-					BindRequestScopedEndpoint(endpoint, router, resolveFunc, destroFunc)
+					BindRequestScopedEndpoint(endpoint, router, resolveFunc, destroyFunc)
 
 				} else {
 					BindEndpoint(endpoint, router)

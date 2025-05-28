@@ -8,13 +8,15 @@ import (
 )
 
 type SomeStruct struct{}
-type SomeDependencyInterface interface{}
+type TestView interface {
+	Query(q ddd.Query) string
+}
 type SomeDependencyStruct struct{}
 type SomeStructRepo struct {
-	Logger                  ddd.Logger              `resource:""`
-	someDependencyInterface SomeDependencyInterface `resource:""`
-	someDependencyStruct    SomeDependencyStruct    `resource:"customDepenedencyName"`
-	someDependencyPointer   *SomeDependencyStruct   `resource:""`
+	Logger                  ddd.Logger            `resource:""`
+	someDependencyInterface TestView              `resource:""`
+	someDependencyStruct    SomeDependencyStruct  `resource:"customDepenedencyName"`
+	someDependencyPointer   *SomeDependencyStruct `resource:""`
 	nonResourceDependency   string
 }
 
@@ -24,15 +26,15 @@ func (s SomeStructRepo) Delete(id ddd.ID) error              { return nil }
 func (s SomeStructRepo) Update(aggregate *SomeStruct) error  { return nil }
 
 type DatabaseConfig struct {
-	ConnectionString string `json:"connectionString,omitempty"`
+	ConnectionString string `json:"connectionString"`
 }
 
-func (s *DatabaseConfig) OnInit() {
+func (c *DatabaseConfig) OnInit() {
 	config, err := ddd.Configuration[DatabaseConfig]("configs/properties.json")
 	if err != nil {
 		panic(err)
 	}
-	*s = *config
+	*c = *config
 }
 
 // TestEndpoint represents a test HTTP endpoint
