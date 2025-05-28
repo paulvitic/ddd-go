@@ -23,14 +23,6 @@ type resource struct {
 	instance     atomic.Value
 	initOnce     sync.Once
 	instancePool sync.Map
-	hooks        LifecycleHooks[any]
-}
-
-// LifecycleHooks defines lifecycle hooks for dependencies
-type LifecycleHooks[T any] struct {
-	OnInit    func(T) error
-	OnStart   func(T) error
-	OnDestroy func(T) error
 }
 
 func Resource(factory any, options ...any) *resource {
@@ -44,14 +36,13 @@ func Resource(factory any, options ...any) *resource {
 	}
 
 	typ := factoryType.Out(0)
-	name, scope, hooks := processOptions(typ, options...)
+	name, scope := processOptions(typ, options...)
 
 	return &resource{
 		factory:      reflect.ValueOf(factory),
 		typ:          typ,
 		name:         name,
 		scope:        scope,
-		hooks:        hooks,
 		instancePool: sync.Map{},
 	}
 }
@@ -88,10 +79,62 @@ func (r *resource) Scope() Scope {
 	return r.scope
 }
 
-func processOptions(typ reflect.Type, options ...any) (string, Scope, LifecycleHooks[any]) {
+// ExecuteLifecycleHook discovers and executes a specific lifecycle hook on an instance
+func (r *resource) ExecuteLifecycleHook(instance any, methodName string) error {
+	instanceValue := reflect.ValueOf(instance)
+
+	method := instanceValue.MethodByName(methodName)
+	if !method.IsValid() {
+		return nil // Hook doesn't exist, that's fine
+	}
+
+	// Verify the method signature
+	if !isLifecycleHook(method.Type()) {
+		return nil // Invalid signature, skip
+	}
+
+	// Call the method
+	results := method.Call([]reflect.Value{})
+
+	// Handle return value
+	if len(results) == 0 {
+		return nil // void method
+	}
+
+	if len(results) == 1 {
+		if results[0].IsNil() {
+			return nil
+		}
+		return results[0].Interface().(error)
+	}
+
+	return nil
+}
+
+// isLifecycleHook checks if a method has the correct lifecycle hook signature
+func isLifecycleHook(methodType reflect.Type) bool {
+	// Should have no parameters (just the receiver)
+	if methodType.NumIn() != 0 {
+		return false
+	}
+
+	// Should return only error or nothing
+	if methodType.NumOut() == 0 {
+		return true // void methods are acceptable
+	}
+
+	if methodType.NumOut() == 1 {
+		// Check if it returns error
+		errorType := reflect.TypeOf((*error)(nil)).Elem()
+		return methodType.Out(0).Implements(errorType)
+	}
+
+	return false
+}
+
+func processOptions(typ reflect.Type, options ...any) (string, Scope) {
 	var name string
 	scope := Singleton
-	var hooks LifecycleHooks[any]
 
 	for _, option := range options {
 		switch v := option.(type) {
@@ -99,10 +142,6 @@ func processOptions(typ reflect.Type, options ...any) (string, Scope, LifecycleH
 			name = v
 		case Scope:
 			scope = v
-		default:
-			if h, ok := isLifecycleHooks(v); ok {
-				hooks = h
-			}
 		}
 	}
 
@@ -110,56 +149,5 @@ func processOptions(typ reflect.Type, options ...any) (string, Scope, LifecycleH
 		name = getDefaultName(typ)
 	}
 
-	return name, scope, hooks
-}
-
-func convertToInterfaceFunc(v reflect.Value) func(any) error {
-	if v.IsNil() {
-		return nil
-	}
-	return func(i any) error {
-		results := v.Call([]reflect.Value{reflect.ValueOf(i)})
-		if len(results) == 0 {
-			return nil
-		}
-		err, _ := results[0].Interface().(error)
-		return err
-	}
-}
-
-func isLifecycleHooks(v any) (LifecycleHooks[any], bool) {
-	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Struct {
-		return LifecycleHooks[any]{}, false
-	}
-
-	rt := rv.Type()
-	if rt.NumField() != 3 {
-		return LifecycleHooks[any]{}, false
-	}
-
-	onInitField, hasOnInit := rt.FieldByName("OnInit")
-	onStartField, hasOnStart := rt.FieldByName("OnStart")
-	onDestroyField, hasOnDestroy := rt.FieldByName("OnDestroy")
-
-	if !hasOnInit || !hasOnStart || !hasOnDestroy {
-		return LifecycleHooks[any]{}, false
-	}
-
-	isValidHook := func(f reflect.StructField) bool {
-		return f.Type.Kind() == reflect.Func &&
-			f.Type.NumIn() == 1 &&
-			f.Type.NumOut() == 1 &&
-			f.Type.Out(0) == reflect.TypeOf((*error)(nil)).Elem()
-	}
-
-	if !isValidHook(onInitField) || !isValidHook(onStartField) || !isValidHook(onDestroyField) {
-		return LifecycleHooks[any]{}, false
-	}
-
-	return LifecycleHooks[any]{
-		OnInit:    convertToInterfaceFunc(rv.FieldByName("OnInit")),
-		OnStart:   convertToInterfaceFunc(rv.FieldByName("OnStart")),
-		OnDestroy: convertToInterfaceFunc(rv.FieldByName("OnDestroy")),
-	}, true
+	return name, scope
 }

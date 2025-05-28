@@ -1,3 +1,5 @@
 {
-    "connectionString" : "test_connection_string"
+    "connectionString": "test_connection_string",
+    "inMemoryEventLogBufferSize": 100,
+    "eventListenerWorkerCount": 1
 }

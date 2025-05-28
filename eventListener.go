@@ -4,22 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"sync"
+	"time"
 )
 
 // EventListener listens to events from the EventLog and dispatches them to the EventBus
 type EventListener interface {
 	// Start begins listening to the event log queue and dispatching events
-	OnStart(ctx context.Context) error
+	OnStart() error
 	// Stop halts event listening and dispatching
-	OnDestroy(ctx context.Context) error
+	OnDestroy() error
 	// IsRunning returns true if the listener is currently running
 	IsRunning() bool
 }
 
 // eventListener is the standard implementation of the EventListener interface
 type eventListener struct {
+	log         *Logger
 	eventLog    EventLog
 	eventBus    EventBus
 	running     bool
@@ -32,12 +33,17 @@ type eventListener struct {
 // EventListenerConfig contains configuration for the event listener
 type EventListenerConfig struct {
 	// WorkerCount is the number of workers that process events
-	WorkerCount int `json:"workerCount"`
+	WorkerCount int `json:"eventListenerWorkerCount"`
+}
+
+func NewEventListenerConfig() (*EventListenerConfig, error) {
+	return Configuration[EventListenerConfig]("configs/properties.json")
 }
 
 // NewEventListener creates a new event listener
-func NewEventListener(config EventListenerConfig, eventLog EventLog, eventBus EventBus) EventListener {
+func NewEventListener(config *EventListenerConfig, eventLog EventLog, eventBus EventBus) EventListener {
 	return &eventListener{
+		log:         NewLogger(),
 		eventLog:    eventLog,
 		eventBus:    eventBus,
 		stopCh:      make(chan struct{}),
@@ -52,8 +58,8 @@ func (l *eventListener) IsRunning() bool {
 	return l.running
 }
 
-// Start begins listening to the event log queue and dispatching events
-func (l *eventListener) OnStart(ctx context.Context) error {
+// OnStart begins listening to the event log queue and dispatching events
+func (l *eventListener) OnStart() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -77,17 +83,19 @@ func (l *eventListener) OnStart(ctx context.Context) error {
 	l.stopCh = make(chan struct{})
 
 	// Start worker goroutines to process events
+	// Use background context for the workers since they manage their own lifecycle
+	ctx := context.Background()
 	for range l.workerCount {
 		l.listenerWg.Add(1)
 		go l.listen(ctx, *eventQueue)
 	}
 
-	log.Printf("Event listener started with %d workers", l.workerCount)
+	l.log.Info("Event listener started with %d workers", l.workerCount)
 	return nil
 }
 
-// Stop halts event listening and dispatching
-func (l *eventListener) OnDestroy(ctx context.Context) error {
+// OnDestroy halts event listening and dispatching
+func (l *eventListener) OnDestroy() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -98,20 +106,24 @@ func (l *eventListener) OnDestroy(ctx context.Context) error {
 	close(l.stopCh)
 	l.running = false
 
-	// Wait for workers to finish
+	// Wait for workers to finish with a reasonable timeout
 	done := make(chan struct{})
 	go func() {
 		l.listenerWg.Wait()
 		close(done)
 	}()
 
-	// Wait for workers to finish or context to be cancelled
+	// Create a timeout context for cleanup
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Wait for workers to finish or timeout
 	select {
 	case <-done:
-		log.Println("Event listener stopped")
+		l.log.Info("Event listener stopped")
 		return nil
 	case <-ctx.Done():
-		log.Println("Context cancelled while waiting for event listener to stop")
+		l.log.Warn("Timeout waiting for event listener to stop")
 		return ctx.Err()
 	}
 }
@@ -128,17 +140,16 @@ func (l *eventListener) listen(ctx context.Context, eventQueue chan Event) {
 				return
 			}
 			// Dispatch the event to the event bus
-			// Use a background context for the event dispatch to ensure it continues
-			// even if the original context is cancelled
+			// Use a background context for the event dispatch
 			dispatchCtx := context.Background()
 			if err := l.eventBus.Dispatch(dispatchCtx, event); err != nil {
-				log.Printf("Error dispatching event %s: %v", event.Type(), err)
+				l.log.Error("Error dispatching event %s: %v", event.Type(), err)
 			}
 		case <-l.stopCh:
 			// Listener is being stopped
 			return
 		case <-ctx.Done():
-			// Context was cancelled
+			// Context was cancelled (shouldn't happen with background context, but good practice)
 			return
 		}
 	}

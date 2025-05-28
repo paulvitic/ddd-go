@@ -45,15 +45,22 @@ func (c *Context) WithResources(resources ...*resource) *Context {
 	for _, resource := range resources {
 		c.registerResource(resource)
 	}
+
 	return c
 }
 
 func (c *Context) registerDefaultResources() {
 	c.log.Info("Registering default resources")
+
 	c.registerResource(Resource(NewLogger))
 	c.registerResource(Resource(NewEventBus))
+
+	c.registerResource(Resource(NewInMemoryEventLogConfig))
 	c.registerResource(Resource(NewInMemoryEventLog))
+
+	c.registerResource(Resource(NewEventListenerConfig))
 	c.registerResource(Resource(NewEventListener))
+
 	c.registerResource(Resource(NewCommandBus))
 }
 
@@ -67,6 +74,15 @@ func (c *Context) registerResource(rsc *resource) {
 	c.resources[typ][rsc.Name()] = rsc
 
 	c.log.Info("%s registered", rsc.TypeName())
+
+	if rsc.scope == Singleton {
+		c.log.Info("Initializing singleton resource: %s", rsc.TypeName())
+
+		// Construct the singleton instance
+		if _, err := c.resolveSingleton(rsc); err != nil {
+			c.log.Error("Failed to initialize singleton %s: %v", rsc.TypeName(), err)
+		}
+	}
 }
 
 func (c *Context) BindEndpoints(router *mux.Router) error {
@@ -124,9 +140,7 @@ func (c *Context) Resolve(typ reflect.Type, options ...any) (any, error) {
 	}
 	defer c.resolving.Delete(typ)
 
-	c.mu.RLock()
 	resource, err := c.getResource(typ, name)
-	c.mu.RUnlock()
 
 	if err != nil {
 		return nil, err
@@ -193,13 +207,11 @@ func (c *Context) Destroy() error {
 	defer c.mu.Unlock()
 
 	for _, implementations := range c.resources {
-		for _, info := range implementations {
-			if info.hooks.OnDestroy != nil {
-				instance := info.instance.Load()
-				if instance != nil {
-					if err := info.hooks.OnDestroy(instance); err != nil {
-						return err
-					}
+		for _, resource := range implementations {
+			instance := resource.instance.Load()
+			if instance != nil {
+				if err := resource.ExecuteLifecycleHook(instance, "OnDestroy"); err != nil {
+					return fmt.Errorf("OnDestroy hook failed for %s: %w", resource.TypeName(), err)
 				}
 			}
 		}
@@ -228,18 +240,16 @@ func (c *Context) ClearRequestScoped(rsc *resource, id uuid.UUID) {
 
 	resource, err := c.getResource(rsc.Type(), rsc.Name())
 	if err != nil {
-		// If we can't get the resource, log and return
 		c.log.Error("Error getting resource for cleanup: %v", err)
 		return
 	}
 
 	if instance, exists := resource.instancePool.Load(id); exists {
-		// Run destroy hooks if they exist
-		if resource.hooks.OnDestroy != nil {
-			if err := resource.hooks.OnDestroy(instance); err != nil {
-				c.log.Error("Error during OnDestroy hook for request-scoped dependency: %v", err)
-			}
+		// Run OnDestroy hook
+		if err := resource.ExecuteLifecycleHook(instance, "OnDestroy"); err != nil {
+			c.log.Error("Error during OnDestroy hook for request-scoped dependency %s: %v", resource.TypeName(), err)
 		}
+
 		// Remove the instance from the pool
 		resource.instancePool.Delete(id)
 	}
@@ -327,20 +337,18 @@ func (c *Context) construct(resource *resource) (any, error) {
 
 	instance := results[0].Interface()
 
-	// AutoWire dependencies after construction - THIS WAS MISSING!
+	// AutoWire dependencies after construction
 	if err := c.AutoWire(instance); err != nil {
 		return nil, fmt.Errorf("failed to autowire dependencies: %w", err)
 	}
 
-	if resource.hooks.OnInit != nil {
-		if err := resource.hooks.OnInit(instance); err != nil {
-			return nil, err
-		}
+	// Execute lifecycle hooks in order: OnInit -> OnStart
+	if err := resource.ExecuteLifecycleHook(instance, "OnInit"); err != nil {
+		return nil, fmt.Errorf("OnInit hook failed: %w", err)
 	}
-	if resource.hooks.OnStart != nil {
-		if err := resource.hooks.OnStart(instance); err != nil {
-			return nil, err
-		}
+
+	if err := resource.ExecuteLifecycleHook(instance, "OnStart"); err != nil {
+		return nil, fmt.Errorf("OnStart hook failed: %w", err)
 	}
 
 	return instance, nil
@@ -348,7 +356,7 @@ func (c *Context) construct(resource *resource) (any, error) {
 
 func (c *Context) resolveFactoryParams(factoryType reflect.Type) ([]reflect.Value, error) {
 	params := make([]reflect.Value, factoryType.NumIn())
-	for i := 0; i < factoryType.NumIn(); i++ {
+	for i := range factoryType.NumIn() {
 		paramType := factoryType.In(i)
 		param, err := c.Resolve(paramType)
 		if err != nil {

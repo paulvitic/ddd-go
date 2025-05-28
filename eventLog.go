@@ -22,7 +22,11 @@ type EventLog interface {
 
 // InMemoryEventLogConfig contains configuration for in-memory event log
 type InMemoryEventLogConfig struct {
-	BufferSize int `json:"bufferSize"`
+	BufferSize int `json:"inMemoryEventLogBufferSize"`
+}
+
+func NewInMemoryEventLogConfig() (*InMemoryEventLogConfig, error) {
+	return Configuration[InMemoryEventLogConfig]("configs/properties.json")
 }
 
 // inMemoryEventLog is an in-memory implementation of EventLog
@@ -33,7 +37,7 @@ type inMemoryEventLog struct {
 }
 
 // NewInMemoryEventLog creates a new in-memory event log
-func NewInMemoryEventLog(config InMemoryEventLogConfig) EventLog {
+func NewInMemoryEventLog(config *InMemoryEventLogConfig) EventLog {
 	return &inMemoryEventLog{
 		queue: make(chan Event, config.BufferSize),
 		log:   make(map[string][]Event),

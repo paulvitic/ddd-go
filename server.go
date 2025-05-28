@@ -52,7 +52,7 @@ func (s *Server) Router() *mux.Router {
 // Start initializes and starts the server
 func (s *Server) Start() error {
 
-	s.bindEndpoins()
+	s.initContexts()
 	// Register health check endpoint
 	s.registerHealthCheck()
 
@@ -132,7 +132,7 @@ func (s *Server) registerHealthCheck() {
 	s.logger.Info("Registered health check endpoint at /")
 }
 
-func (s *Server) bindEndpoins() {
+func (s *Server) initContexts() {
 	for _, context := range s.contexts {
 		context.BindEndpoints(s.router)
 	}
