@@ -22,8 +22,8 @@ type resource struct {
 	scope        Scope
 	instance     atomic.Value
 	initOnce     sync.Once
-	hooks        any
 	instancePool sync.Map
+	hooks        LifecycleHooks[any]
 }
 
 // LifecycleHooks defines lifecycle hooks for dependencies
@@ -68,14 +68,30 @@ func (r *resource) Type() reflect.Type {
 	return r.typ
 }
 
+func (r *resource) TypeName() string {
+	t := r.typ
+
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	// If it has a name, use it
+	if name := t.Name(); name != "" {
+		return name
+	}
+
+	// Fallback to string representation
+	return t.String()
+}
+
 func (r *resource) Scope() Scope {
 	return r.scope
 }
 
-func processOptions(typ reflect.Type, options ...any) (string, Scope, any) {
+func processOptions(typ reflect.Type, options ...any) (string, Scope, LifecycleHooks[any]) {
 	var name string
 	scope := Singleton
-	var hooks any
+	var hooks LifecycleHooks[any]
 
 	for _, option := range options {
 		switch v := option.(type) {

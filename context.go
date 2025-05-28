@@ -12,7 +12,7 @@ import (
 
 // Container represents the dependency injection container
 type Context struct {
-	log       *Logger `resource:""`
+	log       *Logger
 	name      string
 	resources map[reflect.Type]map[string]*resource
 	mu        sync.RWMutex
@@ -26,9 +26,11 @@ func NewContext(name string) *Context {
 		name:      name,
 		resources: make(map[reflect.Type]map[string]*resource),
 	}
-	context.registerResource(Resource(NewLogger))
-	// context.AutoWire(context)
-	context.log.Info("Context %s created", context.name)
+	context.log.Info("%s context created", context.name)
+
+	context.log.Info("Registering default resources")
+	context.registerDefaultResources()
+
 	return context
 }
 
@@ -47,6 +49,11 @@ func (c *Context) WithResources(resources ...*resource) *Context {
 	return c
 }
 
+func (c *Context) registerDefaultResources() {
+	c.registerResource(Resource(NewLogger))
+	c.registerResource(Resource(NewCommandBus))
+}
+
 func (c *Context) registerResource(rsc *resource) {
 	typ := rsc.Type()
 
@@ -55,6 +62,8 @@ func (c *Context) registerResource(rsc *resource) {
 	}
 
 	c.resources[typ][rsc.Name()] = rsc
+
+	c.log.Info("%s registered", rsc.TypeName())
 }
 
 func (c *Context) BindEndpoints(router *mux.Router) error {
@@ -182,13 +191,11 @@ func (c *Context) Destroy() error {
 
 	for _, implementations := range c.resources {
 		for _, info := range implementations {
-			if hooks, ok := info.hooks.(LifecycleHooks[any]); ok {
-				if hooks.OnDestroy != nil {
-					instance := info.instance.Load()
-					if instance != nil {
-						if err := hooks.OnDestroy(instance); err != nil {
-							return err
-						}
+			if info.hooks.OnDestroy != nil {
+				instance := info.instance.Load()
+				if instance != nil {
+					if err := info.hooks.OnDestroy(instance); err != nil {
+						return err
 					}
 				}
 			}
@@ -225,11 +232,9 @@ func (c *Context) ClearRequestScoped(rsc *resource, id uuid.UUID) {
 
 	if instance, exists := resource.instancePool.Load(id); exists {
 		// Run destroy hooks if they exist
-		if hooks, ok := resource.hooks.(LifecycleHooks[any]); ok {
-			if hooks.OnDestroy != nil {
-				if err := hooks.OnDestroy(instance); err != nil {
-					c.log.Error("Error during OnDestroy hook for request-scoped dependency: %v", err)
-				}
+		if resource.hooks.OnDestroy != nil {
+			if err := resource.hooks.OnDestroy(instance); err != nil {
+				c.log.Error("Error during OnDestroy hook for request-scoped dependency: %v", err)
 			}
 		}
 		// Remove the instance from the pool
@@ -324,16 +329,14 @@ func (c *Context) construct(resource *resource) (any, error) {
 		return nil, fmt.Errorf("failed to autowire dependencies: %w", err)
 	}
 
-	if hooks, ok := resource.hooks.(LifecycleHooks[any]); ok {
-		if hooks.OnInit != nil {
-			if err := hooks.OnInit(instance); err != nil {
-				return nil, err
-			}
+	if resource.hooks.OnInit != nil {
+		if err := resource.hooks.OnInit(instance); err != nil {
+			return nil, err
 		}
-		if hooks.OnStart != nil {
-			if err := hooks.OnStart(instance); err != nil {
-				return nil, err
-			}
+	}
+	if resource.hooks.OnStart != nil {
+		if err := resource.hooks.OnStart(instance); err != nil {
+			return nil, err
 		}
 	}
 

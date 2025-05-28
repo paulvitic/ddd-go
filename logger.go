@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -37,15 +37,14 @@ func (l *Logger) getCallerInfo(skipFrames int) string {
 		return "???:0"
 	}
 
-	// Extract just the filename from the full path
-	parts := strings.Split(file, "/")
-	file = parts[len(parts)-1]
+	// Extract just the filename from the full path using filepath.Base
+	filename := filepath.Base(file)
 
-	return file + ":" + strconv.Itoa(line)
+	return filename + ":" + strconv.Itoa(line)
 }
 
 // formatLogEntry creates a formatted log entry
-func (l *Logger) formatLogEntry(level, caller, format string, args ...interface{}) string {
+func (l *Logger) formatLogEntry(level, caller, format string, args ...any) string {
 	timestamp := time.Now().Format(l.dateFormat)
 	message := fmt.Sprintf(format, args...)
 	return fmt.Sprintf("[%s] %s %s: %s", timestamp, level, caller, message)

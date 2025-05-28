@@ -3,7 +3,6 @@ package ddd
 import (
 	"context"
 	"fmt"
-	"log"
 	"reflect"
 	"sync"
 )
@@ -24,16 +23,16 @@ type CommandHandler interface {
 
 // commandBus is the default implementation of CommandBus
 type commandBus struct {
+	log      *Logger
 	handlers map[string]func(context.Context, Command) error
-	logger   *log.Logger
 	mutex    sync.RWMutex
 }
 
 // NewCommandBus creates a new command bus instance
 func NewCommandBus() CommandBus {
 	return &commandBus{
+		log:      NewLogger(),
 		handlers: make(map[string]func(context.Context, Command) error),
-		logger:   log.New(log.Writer(), "CommandBus: ", log.LstdFlags),
 	}
 }
 
@@ -52,12 +51,12 @@ func (c *commandBus) Subscribe(handlers []CommandHandler) error {
 			if _, exists := c.handlers[cmdType]; exists {
 				err := fmt.Errorf("handler already registered for command type: %s", cmdType)
 				errs = append(errs, err)
-				c.logger.Printf("Warning: %v", err)
+				c.log.Warn("%v", err)
 				continue
 			}
 
 			c.handlers[cmdType] = handlerFunc
-			c.logger.Printf("Subscribed %s to %s command",
+			c.log.Info("Subscribed %s to %s command",
 				reflect.TypeOf(handler).Elem().Name(),
 				cmdType)
 		}
@@ -80,11 +79,11 @@ func (c *commandBus) Dispatch(ctx context.Context, command Command) error {
 	}
 
 	cmdType := command.Type()
-	c.logger.Printf("Dispatching %s", cmdType)
+	c.log.Info("Dispatching %s", cmdType)
 
 	// Debug log the command details
 	if debugEnabled {
-		c.logger.Printf("Debug - %s: %+v", cmdType, command.Body())
+		c.log.Info("Debug - %s: %+v", cmdType, command.Body())
 	}
 
 	// Get the handler for this command type

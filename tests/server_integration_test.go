@@ -264,7 +264,7 @@ func testServerLoad(t *testing.T, baseURL string) {
 	results := make(chan bool, 1000)
 
 	// Start workers
-	for i := 0; i < workers; i++ {
+	for range workers {
 		go func() {
 			client := &http.Client{Timeout: 1 * time.Second}
 			for {
