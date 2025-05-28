@@ -15,12 +15,6 @@ type CommandBus interface {
 	Dispatch(ctx context.Context, command Command) error
 }
 
-// CommandHandler defines a handler that can process specific command types
-type CommandHandler interface {
-	// SubscribedTo returns a map of command types to handler functions
-	SubscribedTo() map[string]func(context.Context, Command) error
-}
-
 // commandBus is the default implementation of CommandBus
 type commandBus struct {
 	log      *Logger

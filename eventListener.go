@@ -16,10 +16,6 @@ type EventListener interface {
 	Stop(ctx context.Context) error
 	// IsRunning returns true if the listener is currently running
 	IsRunning() bool
-	// WithEventLog sets the event log to listen to
-	WithEventLog(eventLog EventLog) EventListener
-	// WithEventBus sets the event bus to dispatch events to
-	WithEventBus(eventBus EventBus) EventListener
 }
 
 // eventListener is the standard implementation of the EventListener interface
@@ -40,23 +36,13 @@ type EventListenerConfig struct {
 }
 
 // NewEventListener creates a new event listener
-func NewEventListener(config EventListenerConfig) EventListener {
+func NewEventListener(config EventListenerConfig, eventLog EventLog, eventBus EventBus) EventListener {
 	return &eventListener{
+		eventLog:    eventLog,
+		eventBus:    eventBus,
 		stopCh:      make(chan struct{}),
 		workerCount: config.WorkerCount,
 	}
-}
-
-// WithEventLog sets the event log to listen to
-func (l *eventListener) WithEventLog(eventLog EventLog) EventListener {
-	l.eventLog = eventLog
-	return l
-}
-
-// WithEventBus sets the event bus to dispatch events to
-func (l *eventListener) WithEventBus(eventBus EventBus) EventListener {
-	l.eventBus = eventBus
-	return l
 }
 
 // IsRunning returns true if the listener is currently running
@@ -75,14 +61,6 @@ func (l *eventListener) Start(ctx context.Context) error {
 		return nil // Already running
 	}
 
-	if l.eventLog == nil {
-		return errors.New("event log is not set")
-	}
-
-	if l.eventBus == nil {
-		return errors.New("event bus is not set")
-	}
-
 	// Get the queue from the event log
 	queue := l.eventLog.Queue()
 	if queue == nil {
@@ -99,7 +77,7 @@ func (l *eventListener) Start(ctx context.Context) error {
 	l.stopCh = make(chan struct{})
 
 	// Start worker goroutines to process events
-	for i := 0; i < l.workerCount; i++ {
+	for range l.workerCount {
 		l.listenerWg.Add(1)
 		go l.listen(ctx, *eventQueue)
 	}

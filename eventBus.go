@@ -6,42 +6,43 @@ import (
 	"sync"
 )
 
-// EventHandler defines a function that handles an event
-type EventHandler func(ctx context.Context, event Event) error
-
 // EventBus dispatches events to registered handlers
 type EventBus interface {
 	// Subscribe registers a handler for an event type
-	Subscribe(eventType string, handler EventHandler) EventBus
+	Subscribe(handlers []EventHandler)
 	// Dispatch sends an event to all registered handlers
 	Dispatch(ctx context.Context, event Event) error
 }
 
 // eventBus is the standard implementation of the EventBus interface
 type eventBus struct {
-	handlers      map[string][]EventHandler
+	handlers      map[string][]HandleEvent
 	handlersMutex sync.RWMutex
 }
 
 // NewEventBus creates a new event bus
 func NewEventBus() EventBus {
 	return &eventBus{
-		handlers: make(map[string][]EventHandler),
+		handlers: make(map[string][]HandleEvent),
 	}
 }
 
-// Subscribe registers a handler for an event type
-func (b *eventBus) Subscribe(eventType string, handler EventHandler) EventBus {
+func (b *eventBus) Subscribe(handlers []EventHandler) {
 	b.handlersMutex.Lock()
 	defer b.handlersMutex.Unlock()
 
-	if _, ok := b.handlers[eventType]; !ok {
-		b.handlers[eventType] = []EventHandler{}
-	}
+	for _, handler := range handlers {
+		subscriptions := handler.SubscribedTo()
 
-	b.handlers[eventType] = append(b.handlers[eventType], handler)
-	log.Printf("Subscribed handler to %s event", eventType)
-	return b
+		for eventType, handlerFunc := range subscriptions {
+			if _, ok := b.handlers[eventType]; !ok {
+				b.handlers[eventType] = []HandleEvent{}
+			}
+
+			b.handlers[eventType] = append(b.handlers[eventType], handlerFunc)
+			log.Printf("Subscribed handler to %s event", eventType)
+		}
+	}
 }
 
 // Dispatch sends an event to all registered handlers
