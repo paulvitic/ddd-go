@@ -3,6 +3,7 @@ package ddd
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"net/http"
 	"time"
@@ -23,14 +24,36 @@ type Server struct {
 	cancel context.CancelFunc
 }
 
+type ServerConfig struct {
+	// WorkerCount is the number of workers that process events
+	Host string `json:"serverHost"`
+	Port int    `json:"serverPort"`
+}
+
+func NewServerConfig(configPath ...string) *ServerConfig {
+	var path string
+	if configPath == nil {
+		path = os.Getenv("DDD_SERVER_CONFIG_PATH")
+		if path == "" {
+			path = "configs/properties.json"
+		}
+	} else {
+		path = configPath[0]
+	}
+	config, err := Configuration[ServerConfig](path)
+	if err != nil {
+		panic(err)
+	}
+	return config
+}
+
 // NewServer creates a new server instance
-// TODO: Use a Configuration with host port and active contexts
-func NewServer(host string, port int) *Server {
+func NewServer(serverConfig *ServerConfig) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
 		logger:   NewLogger(),
-		port:     port,
-		host:     host,
+		port:     serverConfig.Port,
+		host:     serverConfig.Host,
 		contexts: make([]*Context, 0),
 		router:   mux.NewRouter(),
 		ctx:      ctx,

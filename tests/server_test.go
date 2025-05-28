@@ -22,8 +22,8 @@ func TestServer(t *testing.T) {
 		)
 
 	// Create server with the context
-	server := ddd.NewServer("localhost", 8081). // Use different port for testing
-							WithContexts(testContext)
+	server := ddd.NewServer(ddd.NewServerConfig()).
+		WithContexts(testContext)
 
 	// Start server in a goroutine
 	_, cancelServer := context.WithCancel(context.Background())
@@ -312,7 +312,7 @@ func BenchmarkGetEndpoint(b *testing.B) {
 			ddd.Resource(NewTestEndpoint, ddd.Request),
 		)
 
-	server := ddd.NewServer("localhost", 8082).
+	server := ddd.NewServer(ddd.NewServerConfig("configs/server_benchmark")).
 		WithContexts(testContext)
 
 	go func() {

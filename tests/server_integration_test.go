@@ -16,9 +16,7 @@ import (
 func TestServerLifecycle(t *testing.T) {
 	// Test configuration
 	const (
-		testHost = "localhost"
-		testPort = 8083
-		baseURL  = "http://localhost:8083"
+		baseURL = "http://localhost:8083"
 	)
 
 	// Setup: Create context and server
@@ -27,7 +25,7 @@ func TestServerLifecycle(t *testing.T) {
 			ddd.Resource(NewTestEndpoint, ddd.Request),
 		)
 
-	server := ddd.NewServer(testHost, testPort).
+	server := ddd.NewServer(ddd.NewServerConfig("configs/server_integration")).
 		WithContexts(testContext)
 
 	// Start server

@@ -10,7 +10,6 @@ import (
 // with event management functionalities
 type Aggregate interface {
 	Entity
-
 	// Event management
 	RaiseEvent(aggregateType string, aggregateID ID, payload any) Aggregate
 	GetAllEvents() []Event
