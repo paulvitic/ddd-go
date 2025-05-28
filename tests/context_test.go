@@ -8,17 +8,12 @@ import (
 
 // Tests for Context
 func TestNewContext(t *testing.T) {
-	context := ddd.NewContext("test-context")
+	context := ddd.NewContext("test-context").
+		WithResources(
+			ddd.Resource(NewTestEndpoint, ddd.Request),
+		)
 
 	if context.Name() != "test-context" {
 		t.Errorf("Expected context name to be 'test-context', got '%s'", context.Name())
 	}
-}
-
-func TestSimpleResourceRegistration(t *testing.T) {
-	// Create context and add resources
-	ddd.NewContext("test").
-		WithResources(
-			ddd.Resource(NewTestEndpoint, ddd.Request),
-		)
 }

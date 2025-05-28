@@ -11,9 +11,9 @@ import (
 // EventListener listens to events from the EventLog and dispatches them to the EventBus
 type EventListener interface {
 	// Start begins listening to the event log queue and dispatching events
-	Start(ctx context.Context) error
+	OnStart(ctx context.Context) error
 	// Stop halts event listening and dispatching
-	Stop(ctx context.Context) error
+	OnDestroy(ctx context.Context) error
 	// IsRunning returns true if the listener is currently running
 	IsRunning() bool
 }
@@ -53,7 +53,7 @@ func (l *eventListener) IsRunning() bool {
 }
 
 // Start begins listening to the event log queue and dispatching events
-func (l *eventListener) Start(ctx context.Context) error {
+func (l *eventListener) OnStart(ctx context.Context) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -87,7 +87,7 @@ func (l *eventListener) Start(ctx context.Context) error {
 }
 
 // Stop halts event listening and dispatching
-func (l *eventListener) Stop(ctx context.Context) error {
+func (l *eventListener) OnDestroy(ctx context.Context) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 

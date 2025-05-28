@@ -51,6 +51,9 @@ func (c *Context) WithResources(resources ...*resource) *Context {
 func (c *Context) registerDefaultResources() {
 	c.log.Info("Registering default resources")
 	c.registerResource(Resource(NewLogger))
+	c.registerResource(Resource(NewEventBus))
+	c.registerResource(Resource(NewInMemoryEventLog))
+	c.registerResource(Resource(NewEventListener))
 	c.registerResource(Resource(NewCommandBus))
 }
 
@@ -146,7 +149,8 @@ func (c *Context) Resolve(typ reflect.Type, options ...any) (any, error) {
 	}
 }
 
-// AutoWire automatically injects dependencies into the fields of the given struct
+// AutoWire automatically injects dependencies into the fields of a given struct
+// if the field is tagged with 'resource' and has public accessibility
 func (c *Context) AutoWire(target any) error {
 	v := reflect.ValueOf(target)
 	if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Struct {
@@ -158,7 +162,6 @@ func (c *Context) AutoWire(target any) error {
 
 	for i := range v.NumField() {
 		field := v.Field(i)
-		// TODO should it be a settable property?
 		if !field.CanSet() {
 			continue
 		}

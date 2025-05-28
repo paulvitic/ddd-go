@@ -24,10 +24,10 @@ type MessageConsumer interface {
 	ProcessMessage(ctx context.Context, msg []byte) error
 
 	// Start begins the message consumption process
-	Start(ctx context.Context) error
+	OnStart(ctx context.Context) error
 
 	// Stop gracefully stops the message consumption process
-	Stop(ctx context.Context) error
+	Ondestroy(ctx context.Context) error
 
 	// Running returns the current state of the consumer
 	Running() bool
@@ -158,7 +158,7 @@ func NewInMemoryMessageConsumer(target string, translator MessageTranslator, cha
 }
 
 // Start begins consuming messages from the channel
-func (c *InMemoryMessageConsumer) Start(ctx context.Context) error {
+func (c *InMemoryMessageConsumer) OnStart(ctx context.Context) error {
 	// Call the base implementation first
 	if err := c.baseMessageConsumer.Start(ctx); err != nil {
 		return err
@@ -214,7 +214,7 @@ func (c *InMemoryMessageConsumer) Start(ctx context.Context) error {
 }
 
 // Stop gracefully stops consumption and waits for processing to complete
-func (c *InMemoryMessageConsumer) Stop(ctx context.Context) error {
+func (c *InMemoryMessageConsumer) Ondestroy(ctx context.Context) error {
 	if !c.Running() {
 		return nil // Already stopped
 	}
