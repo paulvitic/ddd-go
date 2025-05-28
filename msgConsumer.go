@@ -3,9 +3,10 @@ package ddd
 import (
 	"context"
 	"errors"
-	"log"
+
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // MessageSourceKey is the type for the message source context key
@@ -24,10 +25,10 @@ type MessageConsumer interface {
 	ProcessMessage(ctx context.Context, msg []byte) error
 
 	// Start begins the message consumption process
-	OnStart(ctx context.Context) error
+	OnStart() error
 
 	// Stop gracefully stops the message consumption process
-	Ondestroy(ctx context.Context) error
+	OnDestroy() error
 
 	// Running returns the current state of the consumer
 	Running() bool
@@ -67,8 +68,8 @@ func (c *baseMessageConsumer) SetEventBus(eventBus EventBus) {
 	c.eventBus = eventBus
 }
 
-// Start begins the message consumption process
-func (c *baseMessageConsumer) Start(ctx context.Context) error {
+// OnStart begins the message consumption process
+func (c *baseMessageConsumer) OnStart() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -84,8 +85,8 @@ func (c *baseMessageConsumer) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop gracefully stops the message consumption process
-func (c *baseMessageConsumer) Stop(ctx context.Context) error {
+// OnDestroy gracefully stops the message consumption process
+func (c *baseMessageConsumer) OnDestroy() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -139,9 +140,12 @@ func (c *baseMessageConsumer) ProcessMessage(ctx context.Context, msg []byte) er
 // InMemoryMessageConsumer is a MessageConsumer that reads from an in-memory channel
 type InMemoryMessageConsumer struct {
 	*baseMessageConsumer
+	log        *Logger
 	channel    chan string
 	processing chan string
 	stopWait   sync.WaitGroup
+	ctx        context.Context    // Internal context for goroutine management
+	cancel     context.CancelFunc // Cancel function for cleanup
 }
 
 // NewInMemoryMessageConsumer creates a new consumer that reads from a string channel
@@ -152,18 +156,21 @@ func NewInMemoryMessageConsumer(target string, translator MessageTranslator, cha
 
 	base := NewBaseMessageConsumer(target, translator)
 	return &InMemoryMessageConsumer{
+		log:                 NewLogger(),
 		baseMessageConsumer: base,
 		channel:             channel,
 	}
 }
 
-// Start begins consuming messages from the channel
-func (c *InMemoryMessageConsumer) OnStart(ctx context.Context) error {
+// OnStart begins consuming messages from the channel
+func (c *InMemoryMessageConsumer) OnStart() error {
 	// Call the base implementation first
-	if err := c.baseMessageConsumer.Start(ctx); err != nil {
+	if err := c.baseMessageConsumer.OnStart(); err != nil {
 		return err
 	}
 
+	// Create internal context for goroutine management
+	c.ctx, c.cancel = context.WithCancel(context.Background())
 	c.processing = make(chan string)
 	c.stopWait.Add(2) // Two goroutines will signal when done
 
@@ -172,14 +179,19 @@ func (c *InMemoryMessageConsumer) OnStart(ctx context.Context) error {
 		defer c.stopWait.Done()
 		for c.Running() {
 			select {
-			case <-ctx.Done():
+			case <-c.ctx.Done():
 				return
 			case jsonString, ok := <-c.channel:
 				if !ok {
 					return // Channel closed
 				}
 				if c.Running() {
-					c.processing <- jsonString
+					select {
+					case c.processing <- jsonString:
+						// Message sent successfully
+					case <-c.ctx.Done():
+						return
+					}
 				}
 			}
 		}
@@ -190,7 +202,7 @@ func (c *InMemoryMessageConsumer) OnStart(ctx context.Context) error {
 		defer c.stopWait.Done()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-c.ctx.Done():
 				return
 			case jsonString, ok := <-c.processing:
 				if !ok {
@@ -198,52 +210,61 @@ func (c *InMemoryMessageConsumer) OnStart(ctx context.Context) error {
 				}
 
 				// Create a derived context for each message
-				msgCtx, cancel := context.WithCancel(ctx)
-				defer cancel()
-
+				msgCtx, cancel := context.WithCancel(c.ctx)
 				err := c.ProcessMessage(msgCtx, []byte(jsonString))
+				cancel() // Clean up the message context
+
 				if err != nil {
-					log.Printf("Error processing message: %v", err)
+					c.log.Error("Error processing message: %v", err)
 				}
 			}
 		}
 	}()
 
-	log.Printf("Started in-memory message consumer for target %s", c.Target())
+	c.log.Info("Started in-memory message consumer for target %s", c.Target())
 	return nil
 }
 
-// Stop gracefully stops consumption and waits for processing to complete
-func (c *InMemoryMessageConsumer) Ondestroy(ctx context.Context) error {
+// OnDestroy gracefully stops consumption and waits for processing to complete
+func (c *InMemoryMessageConsumer) OnDestroy() error {
 	if !c.Running() {
 		return nil // Already stopped
 	}
 
 	// Call base implementation to update running state
-	if err := c.baseMessageConsumer.Stop(ctx); err != nil {
+	if err := c.baseMessageConsumer.OnDestroy(); err != nil {
 		return err
+	}
+
+	// Cancel the internal context to signal goroutines to stop
+	if c.cancel != nil {
+		c.cancel()
 	}
 
 	// Close the processing channel and wait for goroutines to finish
 	if c.processing != nil {
 		close(c.processing)
 
-		// Use a context with timeout to avoid blocking forever
+		// Wait for goroutines to finish with a timeout
 		done := make(chan struct{})
 		go func() {
 			c.stopWait.Wait()
 			close(done)
 		}()
 
+		// Create a timeout for cleanup
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
 		select {
 		case <-ctx.Done():
-			log.Printf("Timed out waiting for in-memory message consumer to stop")
+			c.log.Warn("Timed out waiting for in-memory message consumer to stop")
 		case <-done:
 			// Successfully stopped
 		}
 	}
 
-	log.Printf("Stopped in-memory message consumer for target %s", c.Target())
+	c.log.Info("Stopped in-memory message consumer for target %s", c.Target())
 	return nil
 }
 
