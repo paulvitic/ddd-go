@@ -109,3 +109,10 @@ func isValidHandlerSignature(methodType reflect.Type) bool {
 	return methodType.In(1).Implements(responseWriterType) &&
 		methodType.In(2) == requestType
 }
+
+func GetContext(r *http.Request) *Context {
+	if ctx := r.Context().Value(ContextKey); ctx != nil {
+		return ctx.(*Context)
+	}
+	return nil
+}

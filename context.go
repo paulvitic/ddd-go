@@ -1,6 +1,7 @@
 package ddd
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sync"
@@ -9,9 +10,14 @@ import (
 	"github.com/gorilla/mux"
 )
 
+type contextKey string
+
+const ContextKey contextKey = "appContext"
+
 // Container represents the dependency injection container
 type Context struct {
-	log       *Logger
+	context.Context
+	Logger    *Logger
 	name      string
 	resources map[reflect.Type]map[string]*resource
 	resolving sync.Map
@@ -27,16 +33,15 @@ func NewContext(name string) *Context {
 	}
 
 	context := &Context{
-		log:       logger.(*Logger),
+		Logger:    logger.(*Logger),
 		name:      name,
 		resources: make(map[reflect.Type]map[string]*resource),
 	}
-	context.log.Info("%s context created", context.name)
+	context.Logger.Info("%s context created", context.name)
 
 	context.WithResources(
 		loggerResource,
 		Resource(NewEventBus),
-		Resource(NewCommandBus),
 	)
 
 	return context
@@ -58,7 +63,7 @@ func (c *Context) WithResources(resources ...*resource) *Context {
 }
 
 func (c *Context) registerDefaultResources() {
-	c.log.Info("Registering default resources")
+	c.Logger.Info("Registering default resources")
 
 	c.registerResource(Resource(NewInMemoryEventLogConfig))
 	c.registerResource(Resource(NewInMemoryEventLog))
@@ -77,7 +82,7 @@ func (c *Context) registerResource(rsc *resource) {
 
 		c.resources[typ][rsc.Name()] = rsc
 
-		c.log.Info("%s registered", ResourceTypeName(typ))
+		c.Logger.Info("%s registered", ResourceTypeName(typ))
 
 		// if rsc.scope == Singleton {
 		// 	c.log.Info("Initializing singleton resource: %s", ResourceTypeName(typ))
@@ -101,11 +106,11 @@ func (c *Context) bindEndpoints(router *mux.Router) error {
 	for name, resource := range resources {
 		// contruct the endpoint to get the path and handlers
 		if endpoint, err := c.construct(resource); err != nil {
-			c.log.Error("can not contruct endpoint %s", name)
+			c.Logger.Error("can not contruct endpoint %s", name)
 
 		} else {
 			if endpoint, ok := endpoint.(Endpoint); !ok {
-				c.log.Error("resource is not of type Endpoint")
+				c.Logger.Error("resource is not of type Endpoint")
 			} else {
 				BindEndpoint(endpoint, router)
 			}

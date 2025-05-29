@@ -2,11 +2,15 @@ package ddd_tests
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/paulvitic/ddd-go"
 )
 
+// ======================================
+// Configuration
+// ======================================
 type DatabaseConfig struct {
 	ConnectionString string `json:"connectionString"`
 }
@@ -19,6 +23,55 @@ func (c *DatabaseConfig) OnInit() {
 	*c = *config
 }
 
+// ==================================
+// Aggregate
+// ==================================
+type User struct {
+	ddd.Aggregate
+}
+
+func (u *User) Register() {
+	return
+}
+
+// ====================================
+// Command
+// ====================================
+type RegisterUser struct {
+	ctx    *ddd.Context
+	userId ddd.ID
+}
+
+func RegisterUserCommand(ctx *ddd.Context, userId ddd.ID) *RegisterUser {
+	return &RegisterUser{
+		ctx:    ctx,
+		userId: userId,
+	}
+}
+
+func (c *RegisterUser) Execute() (any, error) {
+	repo, err := ddd.Resolve[ddd.Repository[User]](c.ctx)
+	if err != nil {
+		panic("context not found")
+	}
+	eventLog, err := ddd.Resolve[ddd.EventLog](c.ctx)
+	if err != nil {
+		panic("event log not found")
+	}
+	user, err := repo.Load(c.userId)
+	if err != nil {
+		panic("can not find user")
+	}
+	user.Register()
+	eventLog.AppendFrom(c.ctx, user)
+
+	return user, nil
+}
+
+// ===================================
+// Endpoint
+// ===================================
+
 // TestEndpoint represents a test HTTP endpoint
 type TestEndpoint struct {
 	// You can inject other dependencies here if needed
@@ -26,7 +79,7 @@ type TestEndpoint struct {
 }
 
 // NewTestEndpoint is the constructor function for TestEndpoint
-func NewTestEndpoint(commandBus *ddd.CommandBus) *TestEndpoint {
+func NewTestEndpoint() *TestEndpoint {
 	return &TestEndpoint{}
 }
 
@@ -50,16 +103,39 @@ func (t *TestEndpoint) Get(w http.ResponseWriter, r *http.Request) {
 
 // Post handles POST requests - discovered by method name convention
 func (t *TestEndpoint) Post(w http.ResponseWriter, r *http.Request) {
-	t.Logger.Info("Test endpoint post method called")
-	response := map[string]interface{}{
-		"message": "POST request handled successfully",
-		"path":    "/test",
-		"method":  "POST",
+	ctx := ddd.GetContext(r)
+	ctx.Logger.Info("Test endpoint post method called")
+
+	// ===========================
+	// ACL should have validation
+	// ===========================
+	type RequestData struct {
+		userId string
+	}
+	var data RequestData
+
+	// Decode directly from request body
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields() // Optional: reject unknown fields
+
+	if err := decoder.Decode(&data); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+	// ==========================
+
+	res, err := RegisterUserCommand(ctx, ddd.NewID(data.userId)).Execute()
+
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(response)
+	json.NewEncoder(w).Encode(res)
 }
 
 // Put handles PUT requests - discovered by method name convention
@@ -81,10 +157,6 @@ func (t *TestEndpoint) Delete(w http.ResponseWriter, r *http.Request) {
 
 type Service interface {
 	DoSomething() error
-}
-
-type Repository interface {
-	FindById(id int) string
 }
 
 type DatabaseService interface {
