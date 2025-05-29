@@ -1,23 +1,29 @@
 package ddd
 
 import (
+	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 	"sync/atomic"
 )
 
-// Scope represents the lifecycle of a dependency
 type Scope int
 
 const (
 	Singleton Scope = iota
 	Prototype
-	Request
 )
+
+var stereotypes = []reflect.Type{
+	reflect.TypeOf((*Endpoint)(nil)).Elem(),
+	reflect.TypeOf((*CommandHandler)(nil)).Elem(),
+	reflect.TypeOf((*EventHandler)(nil)).Elem(),
+}
 
 type resource struct {
 	factory      reflect.Value
-	typ          reflect.Type
+	types        []reflect.Type
 	name         string
 	scope        Scope
 	instance     atomic.Value
@@ -28,19 +34,28 @@ type resource struct {
 func Resource(factory any, options ...any) *resource {
 	factoryType := reflect.TypeOf(factory)
 	if factoryType.Kind() != reflect.Func {
-		panic("constructor must be a function")
+		panic("factory must be a function")
 	}
 
 	if factoryType.NumOut() == 0 || (factoryType.NumOut() == 2 && !factoryType.Out(1).Implements(reflect.TypeOf((*error)(nil)).Elem())) {
-		panic("constructor must return (T) or (T, error)")
+		panic("factory must return (T) or (T, error)")
 	}
 
-	typ := factoryType.Out(0)
-	name, scope := processOptions(typ, options...)
+	returnType := factoryType.Out(0)
+	name, scope := processOptions(returnType, options...)
+
+	// Build the types slice: concrete type first, then stereotype interfaces
+	types := []reflect.Type{returnType}
+
+	for _, stereotype := range stereotypes {
+		if returnType.Implements(stereotype) {
+			types = append(types, stereotype)
+		}
+	}
 
 	return &resource{
 		factory:      reflect.ValueOf(factory),
-		typ:          typ,
+		types:        types,
 		name:         name,
 		scope:        scope,
 		instancePool: sync.Map{},
@@ -55,28 +70,58 @@ func (r *resource) Name() string {
 	return r.name
 }
 
-func (r *resource) Type() reflect.Type {
-	return r.typ
+// Types returns all types (concrete + stereotype interfaces)
+func (r *resource) Types() []reflect.Type {
+	return r.types
 }
 
-func (r *resource) TypeName() string {
-	t := r.typ
-
-	for t.Kind() == reflect.Ptr {
-		t = t.Elem()
+// HasType checks if the resource implements a specific type
+func (r *resource) HasType(t reflect.Type) bool {
+	for _, resourceType := range r.types {
+		if resourceType == t {
+			return true
+		}
 	}
-
-	// If it has a name, use it
-	if name := t.Name(); name != "" {
-		return name
-	}
-
-	// Fallback to string representation
-	return t.String()
+	return false
 }
 
 func (r *resource) Scope() Scope {
 	return r.scope
+}
+
+func (r *resource) Create(params []reflect.Value) (any, error) {
+	switch r.scope {
+	case Singleton:
+		var err error
+		r.initOnce.Do(func() {
+			var instance any
+			instance, err = r.construct(params)
+			if err == nil {
+				r.instance.Store(instance)
+			}
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		return r.instance.Load(), nil
+	case Prototype:
+		// For prototypes, create a new instance each time
+		return r.construct(params)
+	default:
+		return nil, errors.New(fmt.Sprintf("Scope %w not supported", r.scope))
+	}
+}
+
+func (r *resource) construct(params []reflect.Value) (any, error) {
+	results := r.factory.Call(params)
+	if len(results) == 2 && !results[1].IsNil() {
+		return nil, results[1].Interface().(error)
+	}
+
+	instance := results[0].Interface()
+	return instance, nil
 }
 
 // ExecuteLifecycleHook discovers and executes a specific lifecycle hook on an instance
@@ -150,4 +195,18 @@ func processOptions(typ reflect.Type, options ...any) (string, Scope) {
 	}
 
 	return name, scope
+}
+
+func ResourceTypeName(typ reflect.Type) string {
+	for typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+
+	// If it has a name, use it
+	if name := typ.Name(); name != "" {
+		return name
+	}
+
+	// Fallback to string representation
+	return typ.String()
 }

@@ -22,7 +22,7 @@ func TestServerLifecycle(t *testing.T) {
 	// Setup: Create context and server
 	testContext := ddd.NewContext("api").
 		WithResources(
-			ddd.Resource(NewTestEndpoint, ddd.Request),
+			ddd.Resource(NewTestEndpoint),
 		)
 
 	server := ddd.NewServer(ddd.NewServerConfig("configs/server_integration")).

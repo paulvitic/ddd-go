@@ -18,7 +18,7 @@ func TestServer(t *testing.T) {
 	// Create a test context with the TestEndpoint as a request-scoped resource
 	testContext := ddd.NewContext("api").
 		WithResources(
-			ddd.Resource(NewTestEndpoint, ddd.Request),
+			ddd.Resource(NewTestEndpoint),
 		)
 
 	// Create server with the context
@@ -309,7 +309,7 @@ func BenchmarkGetEndpoint(b *testing.B) {
 	// Setup server (you might want to do this once in TestMain)
 	testContext := ddd.NewContext("api").
 		WithResources(
-			ddd.Resource(NewTestEndpoint, ddd.Request),
+			ddd.Resource(NewTestEndpoint),
 		)
 
 	server := ddd.NewServer(ddd.NewServerConfig("configs/server_benchmark")).

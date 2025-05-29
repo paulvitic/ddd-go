@@ -7,24 +7,6 @@ import (
 	"github.com/paulvitic/ddd-go"
 )
 
-type SomeStruct struct{}
-type TestView interface {
-	Query(q ddd.Query) string
-}
-type SomeDependencyStruct struct{}
-type SomeStructRepo struct {
-	Logger                  ddd.Logger            `resource:""`
-	someDependencyInterface TestView              `resource:""`
-	someDependencyStruct    SomeDependencyStruct  `resource:"customDepenedencyName"`
-	someDependencyPointer   *SomeDependencyStruct `resource:""`
-	nonResourceDependency   string
-}
-
-func (s SomeStructRepo) Save(aggregate *SomeStruct) error    { return nil }
-func (s SomeStructRepo) Load(id ddd.ID) (*SomeStruct, error) { return nil, nil }
-func (s SomeStructRepo) Delete(id ddd.ID) error              { return nil }
-func (s SomeStructRepo) Update(aggregate *SomeStruct) error  { return nil }
-
 type DatabaseConfig struct {
 	ConnectionString string `json:"connectionString"`
 }
@@ -44,7 +26,7 @@ type TestEndpoint struct {
 }
 
 // NewTestEndpoint is the constructor function for TestEndpoint
-func NewTestEndpoint() *TestEndpoint {
+func NewTestEndpoint(commandBus *ddd.CommandBus) *TestEndpoint {
 	return &TestEndpoint{}
 }
 
@@ -55,6 +37,7 @@ func (t *TestEndpoint) Path() string {
 
 // Get handles GET requests - discovered by method name convention
 func (t *TestEndpoint) Get(w http.ResponseWriter, r *http.Request) {
+
 	response := map[string]interface{}{
 		"message": "GET request handled successfully",
 		"path":    "/test",

@@ -6,7 +6,6 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 )
 
@@ -15,18 +14,30 @@ type Context struct {
 	log       *Logger
 	name      string
 	resources map[reflect.Type]map[string]*resource
-	mu        sync.RWMutex
 	resolving sync.Map
+	mu        sync.RWMutex
 }
 
 // NewContext creates a new Container
 func NewContext(name string) *Context {
+	loggerResource := Resource(NewLogger)
+	logger, err := loggerResource.Create(nil)
+	if err != nil {
+		panic("failed to instatiate logger")
+	}
+
 	context := &Context{
-		log:       NewLogger(),
+		log:       logger.(*Logger),
 		name:      name,
 		resources: make(map[reflect.Type]map[string]*resource),
 	}
 	context.log.Info("%s context created", context.name)
+
+	context.WithResources(
+		loggerResource,
+		Resource(NewEventBus),
+		Resource(NewCommandBus),
+	)
 
 	return context
 }
@@ -39,9 +50,6 @@ func (c *Context) WithResources(resources ...*resource) *Context {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.registerDefaultResources()
-
-	c.log.Info("Registering resources")
 	for _, resource := range resources {
 		c.registerResource(resource)
 	}
@@ -52,40 +60,37 @@ func (c *Context) WithResources(resources ...*resource) *Context {
 func (c *Context) registerDefaultResources() {
 	c.log.Info("Registering default resources")
 
-	c.registerResource(Resource(NewLogger))
-	c.registerResource(Resource(NewEventBus))
-
 	c.registerResource(Resource(NewInMemoryEventLogConfig))
 	c.registerResource(Resource(NewInMemoryEventLog))
 
 	c.registerResource(Resource(NewEventListenerConfig))
 	c.registerResource(Resource(NewEventListener))
-
-	c.registerResource(Resource(NewCommandBus))
 }
 
 func (c *Context) registerResource(rsc *resource) {
-	typ := rsc.Type()
+	types := rsc.Types()
 
-	if _, exists := c.resources[typ]; !exists {
-		c.resources[typ] = make(map[string]*resource)
-	}
-
-	c.resources[typ][rsc.Name()] = rsc
-
-	c.log.Info("%s registered", rsc.TypeName())
-
-	if rsc.scope == Singleton {
-		c.log.Info("Initializing singleton resource: %s", rsc.TypeName())
-
-		// Construct the singleton instance
-		if _, err := c.resolveSingleton(rsc); err != nil {
-			c.log.Error("Failed to initialize singleton %s: %v", rsc.TypeName(), err)
+	for _, typ := range types {
+		if _, exists := c.resources[typ]; !exists {
+			c.resources[typ] = make(map[string]*resource)
 		}
+
+		c.resources[typ][rsc.Name()] = rsc
+
+		c.log.Info("%s registered", ResourceTypeName(typ))
+
+		// if rsc.scope == Singleton {
+		// 	c.log.Info("Initializing singleton resource: %s", ResourceTypeName(typ))
+
+		// 	// Construct the singleton instance
+		// 	if _, err := c.resolveSingleton(rsc); err != nil {
+		// 		c.log.Error("Failed to initialize singleton %s: %v", ResourceTypeName(typ), err)
+		// 	}
+		// }
 	}
 }
 
-func (c *Context) BindEndpoints(router *mux.Router) error {
+func (c *Context) bindEndpoints(router *mux.Router) error {
 	// Create a subrouter for the context
 	router = router.PathPrefix("/" + c.Name()).Subrouter()
 
@@ -94,7 +99,7 @@ func (c *Context) BindEndpoints(router *mux.Router) error {
 
 	// Bind each endpoint
 	for name, resource := range resources {
-		// contruct the enspoint to get the path and handlers
+		// contruct the endpoint to get the path and handlers
 		if endpoint, err := c.construct(resource); err != nil {
 			c.log.Error("can not contruct endpoint %s", name)
 
@@ -102,23 +107,7 @@ func (c *Context) BindEndpoints(router *mux.Router) error {
 			if endpoint, ok := endpoint.(Endpoint); !ok {
 				c.log.Error("resource is not of type Endpoint")
 			} else {
-				if resource.scope == Request {
-					resolveFunc := func(key uuid.UUID) (any, error) {
-						if rcEndpoint, err := c.Resolve(resource.Type(), key); err != nil {
-							return nil, err
-						} else {
-							return rcEndpoint, nil
-						}
-					}
-					destroyFunc := func(key uuid.UUID) {
-						c.ClearRequestScoped(resource, key)
-					}
-
-					BindRequestScopedEndpoint(endpoint, router, resolveFunc, destroyFunc)
-
-				} else {
-					BindEndpoint(endpoint, router)
-				}
+				BindEndpoint(endpoint, router)
 			}
 		}
 	}
@@ -126,9 +115,9 @@ func (c *Context) BindEndpoints(router *mux.Router) error {
 	return nil
 }
 
-// Resolve resolves a dependency from the container
-func (c *Context) Resolve(typ reflect.Type, options ...any) (any, error) {
-	name, key := c.parseResolveOptions(options...)
+// resolve resolves a dependency from the container
+func (c *Context) resolve(typ reflect.Type, options ...any) (any, error) {
+	name := c.parseResolveOptions(options...)
 
 	if name == "" {
 		name = getDefaultName(typ)
@@ -153,19 +142,14 @@ func (c *Context) Resolve(typ reflect.Type, options ...any) (any, error) {
 	case Prototype:
 		// For prototypes, create a new instance each time
 		return c.construct(resource)
-	case Request:
-		if key == uuid.Nil {
-			panic("request scope resource requires a request ID")
-		}
-		return c.resolveRequest(resource, key)
 	default:
 		return nil, fmt.Errorf("unknown scope: %v", resource.scope)
 	}
 }
 
-// AutoWire automatically injects dependencies into the fields of a given struct
+// autoWire automatically injects dependencies into the fields of a given struct
 // if the field is tagged with 'resource' and has public accessibility
-func (c *Context) AutoWire(target any) error {
+func (c *Context) autoWire(target any) error {
 	v := reflect.ValueOf(target)
 	if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Struct {
 		return fmt.Errorf("target must be a pointer to a struct")
@@ -191,7 +175,7 @@ func (c *Context) AutoWire(target any) error {
 			options = append(options, tag)
 		}
 
-		dependency, err := c.Resolve(field.Type(), options...)
+		dependency, err := c.resolve(field.Type(), options...)
 		if err != nil {
 			return fmt.Errorf("failed to autowire field %s: %w", t.Field(i).Name, err)
 		}
@@ -211,7 +195,7 @@ func (c *Context) Destroy() error {
 			instance := resource.instance.Load()
 			if instance != nil {
 				if err := resource.ExecuteLifecycleHook(instance, "OnDestroy"); err != nil {
-					return fmt.Errorf("OnDestroy hook failed for %s: %w", resource.TypeName(), err)
+					return fmt.Errorf("OnDestroy hook failed for %s: %w", ResourceTypeName(resource.Types()[0]), err)
 				}
 			}
 		}
@@ -219,56 +203,19 @@ func (c *Context) Destroy() error {
 	return nil
 }
 
-// ClearRequestScoped clears all request-scoped dependencies
-func (c *Context) ClearAllRequestScoped() {
-	for _, resources := range c.resources {
-		for _, resource := range resources {
-			if resource.scope == Request {
-				resource.instancePool.Range(func(key, value interface{}) bool {
-					c.ClearRequestScoped(resource, key.(uuid.UUID))
-					return true
-				})
-			}
-		}
-	}
-}
-
-// ClearRequestScopedByID clears request-scoped dependencies for a specific ID
-func (c *Context) ClearRequestScoped(rsc *resource, id uuid.UUID) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	resource, err := c.getResource(rsc.Type(), rsc.Name())
-	if err != nil {
-		c.log.Error("Error getting resource for cleanup: %v", err)
-		return
-	}
-
-	if instance, exists := resource.instancePool.Load(id); exists {
-		// Run OnDestroy hook
-		if err := resource.ExecuteLifecycleHook(instance, "OnDestroy"); err != nil {
-			c.log.Error("Error during OnDestroy hook for request-scoped dependency %s: %v", resource.TypeName(), err)
-		}
-
-		// Remove the instance from the pool
-		resource.instancePool.Delete(id)
-	}
-}
-
-func (c *Context) parseResolveOptions(options ...any) (string, uuid.UUID) {
+func (c *Context) parseResolveOptions(options ...any) string {
 	var name string
-	var key uuid.UUID
 
 	for _, option := range options {
 		switch v := option.(type) {
 		case string:
 			name = v
-		case uuid.UUID:
-			key = v
+		default:
+			name = ""
 		}
 	}
 
-	return name, key
+	return name
 }
 
 // gets resource by type and name
@@ -290,13 +237,13 @@ func (c *Context) getResource(typ reflect.Type, name string) (*resource, error) 
 	return resource, nil
 }
 
-func (c *Context) resolveSingleton(info *resource) (any, error) {
+func (c *Context) resolveSingleton(resource *resource) (any, error) {
 	var err error
-	info.initOnce.Do(func() {
+	resource.initOnce.Do(func() {
 		var instance any
-		instance, err = c.construct(info)
+		instance, err = c.construct(resource)
 		if err == nil {
-			info.instance.Store(instance)
+			resource.instance.Store(instance)
 		}
 	})
 
@@ -304,24 +251,7 @@ func (c *Context) resolveSingleton(info *resource) (any, error) {
 		return nil, err
 	}
 
-	return info.instance.Load(), nil
-}
-
-// Store the instance in the resource's instancePool by a uuid key
-// The key represents a request ID, goroutine ID, or other identifier
-func (c *Context) resolveRequest(info *resource, key uuid.UUID) (any, error) {
-
-	if instance, ok := info.instancePool.Load(key); ok {
-		return instance, nil
-	}
-
-	instance, err := c.construct(info)
-	if err != nil {
-		return nil, err
-	}
-
-	info.instancePool.Store(key, instance)
-	return instance, nil
+	return resource.instance.Load(), nil
 }
 
 func (c *Context) construct(resource *resource) (any, error) {
@@ -338,7 +268,7 @@ func (c *Context) construct(resource *resource) (any, error) {
 	instance := results[0].Interface()
 
 	// AutoWire dependencies after construction
-	if err := c.AutoWire(instance); err != nil {
+	if err := c.autoWire(instance); err != nil {
 		return nil, fmt.Errorf("failed to autowire dependencies: %w", err)
 	}
 
@@ -358,7 +288,7 @@ func (c *Context) resolveFactoryParams(factoryType reflect.Type) ([]reflect.Valu
 	params := make([]reflect.Value, factoryType.NumIn())
 	for i := range factoryType.NumIn() {
 		paramType := factoryType.In(i)
-		param, err := c.Resolve(paramType)
+		param, err := c.resolve(paramType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve parameter %d of type %v: %w", i, paramType, err)
 		}
@@ -402,7 +332,7 @@ func ResourcesByType[T any](c *Context) map[string]*resource {
 
 func Resolve[T any](c *Context, options ...any) (T, error) {
 	var t T
-	instance, err := c.Resolve(reflect.TypeOf(&t).Elem(), options...)
+	instance, err := c.resolve(reflect.TypeOf(&t).Elem(), options...)
 	if err != nil {
 		return t, err
 	}
@@ -410,5 +340,5 @@ func Resolve[T any](c *Context, options ...any) (T, error) {
 }
 
 func AutoWire[T any](c *Context, target *T) error {
-	return c.AutoWire(target)
+	return c.autoWire(target)
 }

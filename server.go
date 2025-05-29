@@ -157,6 +157,6 @@ func (s *Server) registerHealthCheck() {
 
 func (s *Server) initContexts() {
 	for _, context := range s.contexts {
-		context.BindEndpoints(s.router)
+		context.bindEndpoints(s.router)
 	}
 }
