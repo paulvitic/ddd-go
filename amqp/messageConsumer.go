@@ -1,7 +1,7 @@
 package amqp
 
 import (
-	ddd "github.com/paulvitic/ddd-go"
+	"github.com/paulvitic/ddd-go"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"log"
 )
