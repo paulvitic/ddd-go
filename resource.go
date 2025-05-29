@@ -17,7 +17,6 @@ const (
 
 var stereotypes = []reflect.Type{
 	reflect.TypeOf((*Endpoint)(nil)).Elem(),
-	reflect.TypeOf((*CommandHandler)(nil)).Elem(),
 	reflect.TypeOf((*EventHandler)(nil)).Elem(),
 }
 

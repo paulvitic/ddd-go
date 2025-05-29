@@ -111,8 +111,9 @@ func isValidHandlerSignature(methodType reflect.Type) bool {
 }
 
 func GetContext(r *http.Request) *Context {
-	if ctx := r.Context().Value(ContextKey); ctx != nil {
-		return ctx.(*Context)
+	if ctx, ok := r.Context().(*Context); !ok {
+		panic("context nort found in request")
+	} else {
+		return ctx
 	}
-	return nil
 }

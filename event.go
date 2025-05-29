@@ -9,6 +9,7 @@ import (
 
 type Event interface {
 	// Context() string
+	// React()
 	AggregateType() string
 	AggregateID() ID
 	Type() string

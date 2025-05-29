@@ -10,10 +10,6 @@ import (
 	"github.com/gorilla/mux"
 )
 
-type contextKey string
-
-const ContextKey contextKey = "appContext"
-
 // Container represents the dependency injection container
 type Context struct {
 	context.Context
@@ -83,15 +79,6 @@ func (c *Context) registerResource(rsc *resource) {
 		c.resources[typ][rsc.Name()] = rsc
 
 		c.Logger.Info("%s registered", ResourceTypeName(typ))
-
-		// if rsc.scope == Singleton {
-		// 	c.log.Info("Initializing singleton resource: %s", ResourceTypeName(typ))
-
-		// 	// Construct the singleton instance
-		// 	if _, err := c.resolveSingleton(rsc); err != nil {
-		// 		c.log.Error("Failed to initialize singleton %s: %v", ResourceTypeName(typ), err)
-		// 	}
-		// }
 	}
 }
 
