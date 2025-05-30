@@ -11,7 +11,7 @@ import (
 
 func ToResigterUserCommand(r *http.Request) (*command.RegisterUser, error) {
 	type RequestData struct {
-		userId string
+		UserId string
 	}
 	var data RequestData
 
@@ -23,12 +23,12 @@ func ToResigterUserCommand(r *http.Request) (*command.RegisterUser, error) {
 		return nil, err
 	}
 	defer r.Body.Close()
-	return command.NewRegisterUser(ddd.NewID(data.userId)), nil
+	return command.NewRegisterUser(ddd.NewID(data.UserId)), nil
 }
 
 func ToUserByIdQuery(r *http.Request) (ddd.Query, error) {
 	type RequestData struct {
-		userId string
+		UserId string
 	}
 	var data RequestData
 	// Decode directly from request body
@@ -41,7 +41,7 @@ func ToUserByIdQuery(r *http.Request) (ddd.Query, error) {
 	defer r.Body.Close()
 
 	filter := &query.UserById{
-		UserId: data.userId,
+		UserId: data.UserId,
 	}
 	return ddd.NewQuery(filter), nil
 
