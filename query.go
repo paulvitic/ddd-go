@@ -6,7 +6,7 @@ import (
 )
 
 type Query interface {
-	Respond()
+	Respond(ctx *Context) (QueryResponse, error)
 	Type() string
 	Filter() any
 	PageSize() int
@@ -27,8 +27,8 @@ func NewPagedQuery(filter any, pageIndex int, pageSize int) Query {
 	return &query{filter, pageIndex, pageSize}
 }
 
-func (c *query) Respond() {
-	return
+func (c *query) Respond(ctx *Context) (QueryResponse, error) {
+	return NewQueryResponse(nil), nil
 }
 
 func (c *query) Type() string {

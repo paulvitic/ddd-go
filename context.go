@@ -10,6 +10,8 @@ import (
 	"github.com/gorilla/mux"
 )
 
+type ContextFactory = func(parent context.Context) *Context
+
 // Container represents the dependency injection container
 type Context struct {
 	context.Context
@@ -21,7 +23,7 @@ type Context struct {
 }
 
 // NewContext creates a new Container
-func NewContext(name string) *Context {
+func NewContext(parent context.Context, name string) *Context {
 	loggerResource := Resource(NewLogger)
 	logger, err := loggerResource.Create(nil)
 	if err != nil {
@@ -29,6 +31,7 @@ func NewContext(name string) *Context {
 	}
 
 	context := &Context{
+		Context:   parent,
 		Logger:    logger.(*Logger),
 		name:      name,
 		resources: make(map[reflect.Type]map[string]*resource),
@@ -64,8 +67,6 @@ func (c *Context) registerDefaultResources() {
 	c.registerResource(Resource(NewInMemoryEventLogConfig))
 	c.registerResource(Resource(NewInMemoryEventLog))
 
-	c.registerResource(Resource(NewEventListenerConfig))
-	c.registerResource(Resource(NewEventListener))
 }
 
 func (c *Context) registerResource(rsc *resource) {

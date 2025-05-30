@@ -1,5 +1,5 @@
 package ddd
 
 type Command interface {
-	Execute() (any, error)
+	Execute(ctx *Context) (any, error)
 }

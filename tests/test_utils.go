@@ -38,23 +38,20 @@ func (u *User) Register() {
 // Command
 // ====================================
 type RegisterUser struct {
-	ctx    *ddd.Context
 	userId ddd.ID
 }
 
-func RegisterUserCommand(ctx *ddd.Context, userId ddd.ID) *RegisterUser {
+func RegisterUserCommand(userId ddd.ID) *RegisterUser {
 	return &RegisterUser{
-		ctx:    ctx,
 		userId: userId,
 	}
 }
 
-func (c *RegisterUser) Execute() (any, error) {
-	repo, err := ddd.Resolve[ddd.Repository[User]](c.ctx)
+func (c *RegisterUser) Execute(ctx *ddd.Context) (any, error) {
+	repo, err := ddd.Resolve[ddd.Repository[User]](ctx)
 	if err != nil {
 		panic("context not found")
 	}
-	eventLog, err := ddd.Resolve[ddd.EventLog](c.ctx)
 	if err != nil {
 		panic("event log not found")
 	}
@@ -63,7 +60,7 @@ func (c *RegisterUser) Execute() (any, error) {
 		panic("can not find user")
 	}
 	user.Register()
-	eventLog.AppendFrom(c.ctx, user)
+	repo.Update(user)
 
 	return user, nil
 }
@@ -88,19 +85,6 @@ func (t *TestEndpoint) Path() string {
 	return "/test"
 }
 
-// Get handles GET requests - discovered by method name convention
-func (t *TestEndpoint) Get(w http.ResponseWriter, r *http.Request) {
-
-	response := map[string]interface{}{
-		"message": "GET request handled successfully",
-		"path":    "/test",
-		"method":  "GET",
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
 // Post handles POST requests - discovered by method name convention
 func (t *TestEndpoint) Post(w http.ResponseWriter, r *http.Request) {
 	ctx := ddd.GetContext(r)
@@ -116,16 +100,17 @@ func (t *TestEndpoint) Post(w http.ResponseWriter, r *http.Request) {
 
 	// Decode directly from request body
 	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields() // Optional: reject unknown fields
+	// decoder.DisallowUnknownFields() // Optional: reject unknown fields
 
 	if err := decoder.Decode(&data); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
+	command := RegisterUserCommand(ddd.NewID(data.userId))
 	// ==========================
 
-	res, err := RegisterUserCommand(ctx, ddd.NewID(data.userId)).Execute()
+	res, err := command.Execute(ctx)
 
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -136,18 +121,6 @@ func (t *TestEndpoint) Post(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(res)
-}
-
-// Put handles PUT requests - discovered by method name convention
-func (t *TestEndpoint) Put(w http.ResponseWriter, r *http.Request) {
-	response := map[string]interface{}{
-		"message": "PUT request handled successfully",
-		"path":    "/test",
-		"method":  "PUT",
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
 }
 
 // Delete handles DELETE requests - discovered by method name convention

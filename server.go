@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 
 	"net/http"
 	"time"
@@ -59,6 +60,15 @@ func NewServer(serverConfig *ServerConfig) *Server {
 		ctx:      ctx,
 		cancel:   cancel,
 	}
+}
+
+// WithContexts registers contexts with the server
+func (s *Server) WithContextFacories(contextFacories ...ContextFactory) *Server {
+	for _, contextFactory := range contextFacories {
+		results := reflect.ValueOf(contextFactory).Call([]reflect.Value{}) // Pass server context as parent to context ?? Maybe not
+		s.contexts = append(s.contexts, results[0].Interface().(*Context))
+	}
+	return s
 }
 
 // WithContexts registers contexts with the server
