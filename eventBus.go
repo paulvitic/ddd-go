@@ -8,12 +8,23 @@ import (
 	"time"
 )
 
-// EventBus dispatches events to registered handlers
+// Middleware represents a middleware function that can wrap the dispatch process
+type Middleware func(next HandleEvent) HandleEvent
+
+// EventBus dispatches events to registered handlers with middleware support
 type EventBus interface {
 	// Subscribe registers a handler for an event type
 	Subscribe(handlers []EventHandler)
-	// Dispatch sends an event to all registered handlers
-	Dispatch(cevent Event) error
+	// Dispatch sends an event to all registered handlers through the middleware pipeline
+	Dispatch(event Event) error
+	// WithMiddleware adds middleware to the dispatch pipeline
+	WithMiddleware(middleware ...Middleware) EventBus
+	// Start begins the event bus operations
+	Start() error
+	// Stop gracefully shuts down the event bus
+	Stop() error
+	// IsRunning returns whether the event bus is currently running
+	IsRunning() bool
 }
 
 // eventBus is the standard implementation of the EventBus interface
@@ -28,19 +39,73 @@ type eventBus struct {
 	workerCount   int
 	listenerWg    sync.WaitGroup
 	mu            sync.RWMutex
+	middleware    []Middleware
+	dispatchChain HandleEvent
 }
 
 // NewEventBus creates a new event bus
 func NewEventBus(ctx *Context) EventBus {
-	ctx.Logger.Info("Test endpoint post method called")
-	return &eventBus{
-		ctx:      ctx,
-		logger:   ctx.Logger,
-		handlers: make(map[string][]HandleEvent),
-		queue:    make(chan Event, config.BufferSize),
+	ctx.logger.Info("Creating new EventBus")
+
+	eb := &eventBus{
+		ctx:         ctx,
+		logger:      ctx.logger,
+		handlers:    make(map[string][]HandleEvent),
+		queue:       make(chan Event, 100), // Buffer size may come from configuration
+		workerCount: 1,                     // Default to 1 worker, could be configurable
+		middleware:  make([]Middleware, 0),
+	}
+
+	// Initialize the dispatch chain with the core dispatch logic
+	eb.buildDispatchChain()
+
+	return eb
+}
+
+// WithMiddleware adds middleware to the dispatch pipeline
+func (b *eventBus) WithMiddleware(middleware ...Middleware) EventBus {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// Append new middleware to existing middleware
+	b.middleware = append(b.middleware, middleware...)
+
+	// Rebuild the dispatch chain with new middleware
+	b.buildDispatchChain()
+
+	return b
+}
+
+// buildDispatchChain constructs the middleware chain with the core dispatch logic at the end
+func (b *eventBus) buildDispatchChain() {
+	// Core dispatch function (the final handler in the chain)
+	coreDispatch := func(ctx context.Context, event Event) error {
+		return b.coreDispatch(ctx, event)
+	}
+
+	// Build the chain by wrapping from right to left (last middleware wraps first)
+	b.dispatchChain = coreDispatch
+	for i := len(b.middleware) - 1; i >= 0; i-- {
+		b.dispatchChain = b.middleware[i](b.dispatchChain)
 	}
 }
 
+// coreDispatch is the original dispatch logic, now called at the end of the middleware chain
+func (b *eventBus) coreDispatch(ctx context.Context, event Event) error {
+	// Add event to queue for async processing
+	select {
+	case b.queue <- event:
+		// Event queued successfully
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		// Queue is full
+		return errors.New("event queue is full, event not published")
+	}
+}
+
+// Subscribe registers handlers for event types
 func (b *eventBus) Subscribe(handlers []EventHandler) {
 	b.handlersMutex.Lock()
 	defer b.handlersMutex.Unlock()
@@ -59,54 +124,17 @@ func (b *eventBus) Subscribe(handlers []EventHandler) {
 	}
 }
 
-// Dispatch sends an event to all registered handlers
+// Dispatch sends an event through the middleware pipeline
 func (b *eventBus) Dispatch(event Event) error {
+	// Use the context from the event bus
+	ctx := context.Background() // Could use b.ctx if it implements context.Context
 
-	// Publish the event to the queue
-	select {
-	case b.queue <- event:
-		// Event sent successfully
-	// case <-b.ctx.Done():
-	// 	return ctx.Err()
-	default:
-		// Queue is full, don't block but log warning
-		return errors.New("event queue is full, event not published")
-	}
-	b.handlersMutex.RLock()
-	handlers, ok := b.handlers[event.Type()]
-	b.handlersMutex.RUnlock()
-
-	if !ok {
-		// No handlers for this event type
-		return nil
-	}
-
-	// Execute all handlers for this event
-	var errs []error
-
-	for _, handler := range handlers {
-		if err := handler(b.ctx, event); err != nil {
-			log.Printf("Error handling event %s: %v", event.Type(), err)
-			errs = append(errs, err)
-			// We continue processing other handlers even if one fails
-		}
-	}
-
-	if len(errs) > 0 {
-		log.Printf("Errors encountered while dispatching event %s: %d errors", event.Type(), len(errs))
-	}
-
-	return nil
+	// Execute the middleware chain
+	return b.dispatchChain(ctx, event)
 }
 
-func (b *eventBus) IsRunning() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.running
-}
-
-// OnStart begins listening to the event log queue and dispatching events
-func (b *eventBus) OnStart() error {
+// Start begins the event bus operations
+func (b *eventBus) Start() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -117,20 +145,19 @@ func (b *eventBus) OnStart() error {
 	b.running = true
 	b.stopCh = make(chan struct{})
 
-	// Start worker goroutines to process events
-	// Use background context for the workers since they manage their own lifecycle
+	// Start worker goroutines to process events from the queue
 	ctx := context.Background()
-	for range b.workerCount {
+	for i := 0; i < b.workerCount; i++ {
 		b.listenerWg.Add(1)
 		go b.listen(ctx, b.queue)
 	}
 
-	b.logger.Info("Event listener started with %d workers", b.workerCount)
+	b.logger.Info("Event bus started with %d workers", b.workerCount)
 	return nil
 }
 
-// OnDestroy halts event listening and dispatching
-func (b *eventBus) OnDestroy() error {
+// Stop gracefully shuts down the event bus
+func (b *eventBus) Stop() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -155,15 +182,22 @@ func (b *eventBus) OnDestroy() error {
 	// Wait for workers to finish or timeout
 	select {
 	case <-done:
-		b.logger.Info("Event listener stopped")
+		b.logger.Info("Event bus stopped")
 		return nil
 	case <-ctx.Done():
-		b.logger.Warn("Timeout waiting for event listener to stop")
+		b.logger.Warn("Timeout waiting for event bus to stop")
 		return ctx.Err()
 	}
 }
 
-// listen is the worker goroutine that listens to the event queue and dispatches events
+// IsRunning returns whether the event bus is currently running
+func (b *eventBus) IsRunning() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.running
+}
+
+// listen is the worker goroutine that processes events from the queue
 func (b *eventBus) listen(ctx context.Context, eventQueue chan Event) {
 	defer b.listenerWg.Done()
 
@@ -174,36 +208,42 @@ func (b *eventBus) listen(ctx context.Context, eventQueue chan Event) {
 				// Channel was closed
 				return
 			}
-			// Dispatch the event to the event bus
-			b.handlersMutex.RLock()
-			handlers, ok := b.handlers[event.Type()]
-			b.handlersMutex.RUnlock()
+			// Process the event by calling registered handlers
+			b.processEvent(ctx, event)
 
-			if !ok {
-				// No handlers for this event type
-				return
-			}
-
-			// Execute all handlers for this event
-			var errs []error
-
-			for _, handler := range handlers {
-				if err := handler(ctx, event); err != nil {
-					log.Printf("Error handling event %s: %v", event.Type(), err)
-					errs = append(errs, err)
-					// We continue processing other handlers even if one fails
-				}
-			}
-
-			if len(errs) > 0 {
-				log.Printf("Errors encountered while dispatching event %s: %d errors", event.Type(), len(errs))
-			}
 		case <-b.stopCh:
-			// Listener is being stopped
+			// Event bus is being stopped
 			return
+
 		case <-ctx.Done():
-			// Context was cancelled (shouldn't happen with background context, but good practice)
+			// Context was cancelled
 			return
 		}
+	}
+}
+
+// processEvent executes all registered handlers for an event
+func (b *eventBus) processEvent(ctx context.Context, event Event) {
+	b.handlersMutex.RLock()
+	handlers, ok := b.handlers[event.Type()]
+	b.handlersMutex.RUnlock()
+
+	if !ok {
+		// No handlers for this event type
+		return
+	}
+
+	// Execute all handlers for this event
+	var errs []error
+	for _, handler := range handlers {
+		if err := handler(ctx, event); err != nil {
+			log.Printf("Error handling event %s: %v", event.Type(), err)
+			errs = append(errs, err)
+			// Continue processing other handlers even if one fails
+		}
+	}
+
+	if len(errs) > 0 {
+		log.Printf("Errors encountered while processing event %s: %d errors", event.Type(), len(errs))
 	}
 }

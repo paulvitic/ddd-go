@@ -15,7 +15,7 @@ type ContextFactory = func(parent context.Context) *Context
 // Container represents the dependency injection container
 type Context struct {
 	context.Context
-	Logger    *Logger
+	logger    *Logger
 	name      string
 	resources map[reflect.Type]map[string]*resource
 	resolving sync.Map
@@ -32,11 +32,11 @@ func NewContext(parent context.Context, name string) *Context {
 
 	context := &Context{
 		Context:   parent,
-		Logger:    logger.(*Logger),
+		logger:    logger.(*Logger),
 		name:      name,
 		resources: make(map[reflect.Type]map[string]*resource),
 	}
-	context.Logger.Info("%s context created", context.name)
+	context.logger.Info("%s context created", context.name)
 
 	context.WithResources(
 		loggerResource,
@@ -61,8 +61,12 @@ func (c *Context) WithResources(resources ...*resource) *Context {
 	return c
 }
 
+func (c *Context) Logger() *Logger {
+	return c.logger
+}
+
 func (c *Context) registerDefaultResources() {
-	c.Logger.Info("Registering default resources")
+	c.logger.Info("Registering default resources")
 
 	c.registerResource(Resource(NewInMemoryEventLogConfig))
 	c.registerResource(Resource(NewInMemoryEventLog))
@@ -79,7 +83,7 @@ func (c *Context) registerResource(rsc *resource) {
 
 		c.resources[typ][rsc.Name()] = rsc
 
-		c.Logger.Info("%s registered", ResourceTypeName(typ))
+		c.logger.Info("%s registered", ResourceTypeName(typ))
 	}
 }
 
@@ -94,11 +98,11 @@ func (c *Context) bindEndpoints(router *mux.Router) error {
 	for name, resource := range resources {
 		// contruct the endpoint to get the path and handlers
 		if endpoint, err := c.construct(resource); err != nil {
-			c.Logger.Error("can not contruct endpoint %s", name)
+			c.logger.Error("can not contruct endpoint %s", name)
 
 		} else {
 			if endpoint, ok := endpoint.(Endpoint); !ok {
-				c.Logger.Error("resource is not of type Endpoint")
+				c.logger.Error("resource is not of type Endpoint")
 			} else {
 				BindEndpoint(endpoint, router)
 			}

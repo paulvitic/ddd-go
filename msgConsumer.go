@@ -127,10 +127,10 @@ func (c *baseMessageConsumer) ProcessMessage(ctx context.Context, msg []byte) er
 
 	// Enhance the context with message source information
 	// Use a proper type instead of string as key
-	msgCtx := context.WithValue(ctx, MessageSourceKey{}, c.target)
+	// msgCtx := context.WithValue(ctx, MessageSourceKey{}, c.target)
 
 	// Dispatch the event with context
-	return c.eventBus.Dispatch(msgCtx, event)
+	return c.eventBus.Dispatch(event)
 }
 
 //-------------------------------------------------------------

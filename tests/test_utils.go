@@ -63,7 +63,6 @@ func (c *registerUser) Execute(ctx *ddd.Context) (any, error) {
 // ===================================
 // Endpoint
 // ===================================
-
 // TestEndpoint represents a test HTTP endpoint
 type TestEndpoint struct {
 	// You can inject other dependencies here if needed
@@ -80,6 +79,7 @@ func (t *TestEndpoint) Path() string {
 	return "/test"
 }
 
+// acl
 func ToResigterUserComand(r *http.Request) (*registerUser, error) {
 	type RequestData struct {
 		userId string
@@ -100,7 +100,7 @@ func ToResigterUserComand(r *http.Request) (*registerUser, error) {
 // Post handles POST requests - discovered by method name convention
 func (t *TestEndpoint) Post(w http.ResponseWriter, r *http.Request) {
 	ctx := ddd.GetContext(r)
-	ctx.Logger.Info("Test endpoint post method called")
+	ctx.Logger().Info("Test endpoint post method called")
 
 	command, err := ToResigterUserComand(r)
 	if err != nil {
