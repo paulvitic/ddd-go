@@ -2,7 +2,6 @@ package ddd_tests
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/paulvitic/ddd-go"
@@ -37,23 +36,20 @@ func (u *User) Register() {
 // ====================================
 // Command
 // ====================================
-type RegisterUser struct {
+type registerUser struct {
 	userId ddd.ID
 }
 
-func RegisterUserCommand(userId ddd.ID) *RegisterUser {
-	return &RegisterUser{
+func RegisterUser(userId ddd.ID) *registerUser {
+	return &registerUser{
 		userId: userId,
 	}
 }
 
-func (c *RegisterUser) Execute(ctx *ddd.Context) (any, error) {
+func (c *registerUser) Execute(ctx *ddd.Context) (any, error) {
 	repo, err := ddd.Resolve[ddd.Repository[User]](ctx)
 	if err != nil {
-		panic("context not found")
-	}
-	if err != nil {
-		panic("event log not found")
+		panic("repo not found")
 	}
 	user, err := repo.Load(c.userId)
 	if err != nil {
@@ -61,7 +57,6 @@ func (c *RegisterUser) Execute(ctx *ddd.Context) (any, error) {
 	}
 	user.Register()
 	repo.Update(user)
-
 	return user, nil
 }
 
@@ -85,14 +80,7 @@ func (t *TestEndpoint) Path() string {
 	return "/test"
 }
 
-// Post handles POST requests - discovered by method name convention
-func (t *TestEndpoint) Post(w http.ResponseWriter, r *http.Request) {
-	ctx := ddd.GetContext(r)
-	ctx.Logger.Info("Test endpoint post method called")
-
-	// ===========================
-	// ACL should have validation
-	// ===========================
+func ToResigterUserComand(r *http.Request) (*registerUser, error) {
 	type RequestData struct {
 		userId string
 	}
@@ -103,15 +91,25 @@ func (t *TestEndpoint) Post(w http.ResponseWriter, r *http.Request) {
 	// decoder.DisallowUnknownFields() // Optional: reject unknown fields
 
 	if err := decoder.Decode(&data); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
-		return
+		return nil, err
 	}
 	defer r.Body.Close()
-	command := RegisterUserCommand(ddd.NewID(data.userId))
-	// ==========================
+	return RegisterUser(ddd.NewID(data.userId)), nil
+}
+
+// Post handles POST requests - discovered by method name convention
+func (t *TestEndpoint) Post(w http.ResponseWriter, r *http.Request) {
+	ctx := ddd.GetContext(r)
+	ctx.Logger.Info("Test endpoint post method called")
+
+	command, err := ToResigterUserComand(r)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(err)
+	}
 
 	res, err := command.Execute(ctx)
-
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)

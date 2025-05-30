@@ -18,8 +18,8 @@ type EventBus interface {
 
 // eventBus is the standard implementation of the EventBus interface
 type eventBus struct {
-	ctx *Context
-	log
+	ctx           *Context
+	logger        *Logger
 	handlers      map[string][]HandleEvent
 	handlersMutex sync.RWMutex
 	queue         chan Event
@@ -32,7 +32,10 @@ type eventBus struct {
 
 // NewEventBus creates a new event bus
 func NewEventBus(ctx *Context) EventBus {
+	ctx.Logger.Info("Test endpoint post method called")
 	return &eventBus{
+		ctx:      ctx,
+		logger:   ctx.Logger,
 		handlers: make(map[string][]HandleEvent),
 		queue:    make(chan Event, config.BufferSize),
 	}
@@ -122,7 +125,7 @@ func (b *eventBus) OnStart() error {
 		go b.listen(ctx, b.queue)
 	}
 
-	b.log.Info("Event listener started with %d workers", l.workerCount)
+	b.logger.Info("Event listener started with %d workers", b.workerCount)
 	return nil
 }
 
@@ -152,10 +155,10 @@ func (b *eventBus) OnDestroy() error {
 	// Wait for workers to finish or timeout
 	select {
 	case <-done:
-		b.log.Info("Event listener stopped")
+		b.logger.Info("Event listener stopped")
 		return nil
 	case <-ctx.Done():
-		l.log.Warn("Timeout waiting for event listener to stop")
+		b.logger.Warn("Timeout waiting for event listener to stop")
 		return ctx.Err()
 	}
 }
