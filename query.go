@@ -2,15 +2,13 @@ package ddd
 
 import (
 	"math"
-	"reflect"
 )
 
 type Query interface {
-	Respond(ctx *Context) (QueryResponse, error)
-	Type() string
 	Filter() any
 	PageSize() int
 	PageIndex() int
+	Respond(ctx *Context) (QueryResponse, error)
 }
 
 type query struct {
@@ -29,10 +27,6 @@ func NewPagedQuery(filter any, pageIndex int, pageSize int) Query {
 
 func (c *query) Respond(ctx *Context) (QueryResponse, error) {
 	return NewQueryResponse(nil), nil
-}
-
-func (c *query) Type() string {
-	return reflect.TypeOf(c.Filter()).PkgPath() + "." + reflect.TypeOf(c.Filter()).Name()
 }
 
 func (c *query) Filter() any {
@@ -104,8 +98,4 @@ func (qr *queryResponse) Next() int {
 		return qr.PageNumber() + 1
 	}
 	return 0
-}
-
-func QueryType(filter any) string {
-	return reflect.TypeOf(filter).PkgPath() + "." + reflect.TypeOf(filter).Name()
 }

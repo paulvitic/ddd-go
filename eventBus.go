@@ -79,7 +79,7 @@ func (b *eventBus) WithMiddleware(middleware ...Middleware) EventBus {
 // buildDispatchChain constructs the middleware chain with the core dispatch logic at the end
 func (b *eventBus) buildDispatchChain() {
 	// Core dispatch function (the final handler in the chain)
-	coreDispatch := func(ctx context.Context, event Event) error {
+	coreDispatch := func(ctx *Context, event Event) error {
 		return b.coreDispatch(ctx, event)
 	}
 
@@ -126,11 +126,8 @@ func (b *eventBus) Subscribe(handlers []EventHandler) {
 
 // Dispatch sends an event through the middleware pipeline
 func (b *eventBus) Dispatch(event Event) error {
-	// Use the context from the event bus
-	ctx := context.Background() // Could use b.ctx if it implements context.Context
-
 	// Execute the middleware chain
-	return b.dispatchChain(ctx, event)
+	return b.dispatchChain(b.ctx, event)
 }
 
 // Start begins the event bus operations
@@ -147,7 +144,7 @@ func (b *eventBus) Start() error {
 
 	// Start worker goroutines to process events from the queue
 	ctx := context.Background()
-	for i := 0; i < b.workerCount; i++ {
+	for range b.workerCount {
 		b.listenerWg.Add(1)
 		go b.listen(ctx, b.queue)
 	}
@@ -209,7 +206,7 @@ func (b *eventBus) listen(ctx context.Context, eventQueue chan Event) {
 				return
 			}
 			// Process the event by calling registered handlers
-			b.processEvent(ctx, event)
+			b.processEvent(event)
 
 		case <-b.stopCh:
 			// Event bus is being stopped
@@ -223,7 +220,7 @@ func (b *eventBus) listen(ctx context.Context, eventQueue chan Event) {
 }
 
 // processEvent executes all registered handlers for an event
-func (b *eventBus) processEvent(ctx context.Context, event Event) {
+func (b *eventBus) processEvent(event Event) {
 	b.handlersMutex.RLock()
 	handlers, ok := b.handlers[event.Type()]
 	b.handlersMutex.RUnlock()
@@ -236,7 +233,7 @@ func (b *eventBus) processEvent(ctx context.Context, event Event) {
 	// Execute all handlers for this event
 	var errs []error
 	for _, handler := range handlers {
-		if err := handler(ctx, event); err != nil {
+		if err := handler(b.ctx, event); err != nil {
 			log.Printf("Error handling event %s: %v", event.Type(), err)
 			errs = append(errs, err)
 			// Continue processing other handlers even if one fails

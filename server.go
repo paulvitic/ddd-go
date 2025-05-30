@@ -63,7 +63,7 @@ func NewServer(serverConfig *ServerConfig) *Server {
 }
 
 // WithContexts registers contexts with the server
-func (s *Server) WithContextFacories(contextFacories ...ContextFactory) *Server {
+func (s *Server) WithContexts(contextFacories ...ContextFactory) *Server {
 	for _, contextFactory := range contextFacories {
 		results := reflect.ValueOf(contextFactory).Call([]reflect.Value{}) // Pass server context as parent to context ?? Maybe not
 		s.contexts = append(s.contexts, results[0].Interface().(*Context))
@@ -72,10 +72,10 @@ func (s *Server) WithContextFacories(contextFacories ...ContextFactory) *Server 
 }
 
 // WithContexts registers contexts with the server
-func (s *Server) WithContexts(contexts ...*Context) *Server {
-	s.contexts = contexts
-	return s
-}
+// func (s *Server) WithContexts(contexts ...*Context) *Server {
+// 	s.contexts = contexts
+// 	return s
+// }
 
 // Router returns the server's router
 func (s *Server) Router() *mux.Router {

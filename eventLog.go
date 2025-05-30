@@ -61,7 +61,7 @@ func NewInMemoryEventLog(config *InMemoryEventLogConfig) EventLog {
 
 // Middleware returns the middleware function for event logging
 func (e *inMemoryEventLog) Middleware(next HandleEvent) HandleEvent {
-	return func(ctx context.Context, event Event) error {
+	return func(ctx *Context, event Event) error {
 		// Log the event before passing to next middleware
 		if err := e.Append(ctx, event); err != nil {
 			e.logger.Error("Failed to append event to log: %v", err)
