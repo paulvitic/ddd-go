@@ -11,19 +11,15 @@ import (
 	"time"
 
 	"github.com/paulvitic/ddd-go"
+	"github.com/paulvitic/ddd-go/tests/test_server/test_context"
 )
 
 // TestServer tests the complete server lifecycle and endpoint functionality
 func TestServer(t *testing.T) {
-	// Create a test context with the TestEndpoint as a request-scoped resource
-	testContext := ddd.NewContext("api").
-		WithResources(
-			ddd.Resource(NewTestEndpoint),
-		)
 
 	// Create server with the context
 	server := ddd.NewServer(ddd.NewServerConfig()).
-		WithContexts(testContext)
+		WithContexts(test_context.TestContext)
 
 	// Start server in a goroutine
 	_, cancelServer := context.WithCancel(context.Background())
@@ -306,14 +302,8 @@ func testRequestScoping(t *testing.T) {
 
 // Benchmark tests
 func BenchmarkGetEndpoint(b *testing.B) {
-	// Setup server (you might want to do this once in TestMain)
-	testContext := ddd.NewContext("api").
-		WithResources(
-			ddd.Resource(NewTestEndpoint),
-		)
-
 	server := ddd.NewServer(ddd.NewServerConfig("configs/server_benchmark")).
-		WithContexts(testContext)
+		WithContexts(test_context.TestContext)
 
 	go func() {
 		server.Start()

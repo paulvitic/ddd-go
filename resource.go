@@ -1,7 +1,6 @@
 package ddd
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -14,6 +13,17 @@ const (
 	Singleton Scope = iota
 	Prototype
 )
+
+func (s Scope) String() string {
+	switch s {
+	case Singleton:
+		return "Singleton"
+	case Prototype:
+		return "Prototype"
+	default:
+		return "Unknown"
+	}
+}
 
 var stereotypes = []reflect.Type{
 	reflect.TypeOf((*Endpoint)(nil)).Elem(),
@@ -109,7 +119,7 @@ func (r *resource) Create(params []reflect.Value) (any, error) {
 		// For prototypes, create a new instance each time
 		return r.construct(params)
 	default:
-		return nil, errors.New(fmt.Sprintf("Scope %w not supported", r.scope))
+		return nil, fmt.Errorf("Scope %s not supported", r.scope.String())
 	}
 }
 
