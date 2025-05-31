@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"testing"
@@ -171,7 +170,7 @@ func testPutEndpoint(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(requestBody)
 
-	req, err := http.NewRequest("PUT", "http://localhost:8081/api/test", bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequest("PUT", "http://localhost:8081/test/users", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		t.Fatalf("Failed to create PUT request: %v", err)
 	}
@@ -202,7 +201,7 @@ func testPutEndpoint(t *testing.T) {
 
 // testDeleteEndpoint tests the DELETE endpoint
 func testDeleteEndpoint(t *testing.T) {
-	req, err := http.NewRequest("DELETE", "http://localhost:8081/api/test", nil)
+	req, err := http.NewRequest("DELETE", "http://localhost:8081/test/users", nil)
 	if err != nil {
 		t.Fatalf("Failed to create DELETE request: %v", err)
 	}
@@ -224,7 +223,7 @@ func testDeleteEndpoint(t *testing.T) {
 
 // testUnsupportedMethod tests that unsupported methods return 405
 func testUnsupportedMethod(t *testing.T) {
-	req, err := http.NewRequest("TRACE", "http://localhost:8081/api/test", nil)
+	req, err := http.NewRequest("TRACE", "http://localhost:8081/test/users", nil)
 	if err != nil {
 		t.Fatalf("Failed to create TRACE request: %v", err)
 	}
@@ -243,55 +242,6 @@ func testUnsupportedMethod(t *testing.T) {
 	t.Log("Unsupported method correctly returns 405")
 }
 
-// testRequestScoping tests that each request gets a new instance
-func testRequestScoping(t *testing.T) {
-	// Make multiple concurrent requests to test request scoping
-	const numRequests = 10
-	responses := make(chan string, numRequests)
-	errors := make(chan error, numRequests)
-
-	for i := 0; i < numRequests; i++ {
-		go func(requestID int) {
-			resp, err := http.Get(fmt.Sprintf("http://localhost:8081/api/test?request=%d", requestID))
-			if err != nil {
-				errors <- err
-				return
-			}
-			defer resp.Body.Close()
-
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				errors <- err
-				return
-			}
-
-			responses <- string(body)
-		}(i)
-	}
-
-	// Collect all responses
-	for range numRequests {
-		select {
-		case err := <-errors:
-			t.Fatalf("Request failed: %v", err)
-		case response := <-responses:
-			// Each response should be valid JSON
-			var jsonResp map[string]interface{}
-			if err := json.Unmarshal([]byte(response), &jsonResp); err != nil {
-				t.Errorf("Invalid JSON response: %v", err)
-			}
-
-			if jsonResp["method"] != "GET" {
-				t.Errorf("Expected method 'GET', got '%v'", jsonResp["method"])
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatal("Request timed out")
-		}
-	}
-
-	t.Log("Request scoping working correctly - all concurrent requests handled")
-}
-
 // Benchmark tests
 func BenchmarkGetEndpoint(b *testing.B) {
 	server := ddd.NewServer(ddd.NewServerConfig("configs/server_benchmark")).
@@ -306,7 +256,7 @@ func BenchmarkGetEndpoint(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			resp, err := http.Get("http://localhost:8082/api/test")
+			resp, err := http.Get("http://localhost:8082/test/users")
 			if err != nil {
 				b.Fatalf("Request failed: %v", err)
 			}
