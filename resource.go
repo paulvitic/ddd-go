@@ -176,7 +176,7 @@ func (r *resource) collectTypes() {
 	r.types = append(r.types, returnType)
 
 	if r.alias == "" {
-		r.alias = getDefaultName(returnType)
+		r.alias = ResourceName(returnType)
 	}
 
 	for _, stereotype := range stereotypes {
@@ -212,7 +212,7 @@ func processOptions(options ...any) (string, Scope) {
 	return alias, scope
 }
 
-func getDefaultName(t reflect.Type) string {
+func ResourceName(t reflect.Type) string {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}

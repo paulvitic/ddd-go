@@ -2,7 +2,7 @@ package command
 
 import (
 	"github.com/paulvitic/ddd-go"
-	"github.com/paulvitic/ddd-go/tests/test_server/test_context/domain/model"
+	"github.com/paulvitic/ddd-go/tests/test_server/test_context/domain/repository"
 )
 
 type RegisterUser struct {
@@ -16,7 +16,7 @@ func NewRegisterUser(userId ddd.ID) *RegisterUser {
 }
 
 func (c *RegisterUser) Execute(ctx *ddd.Context) (any, error) {
-	repo, err := ddd.Resolve[ddd.Repository[model.User]](ctx)
+	repo, err := ddd.Resolve[repository.UserRepository](ctx)
 	if err != nil {
 		panic("repo not found")
 	}

@@ -10,6 +10,23 @@ type User struct {
 	IsActive bool
 }
 
+func LoadUser(id ddd.ID) *User {
+	user := &User{
+		ddd.NewAggregate(id, User{}),
+		"",
+		"",
+		"",
+		true,
+	}
+
+	user.RaiseEvent(
+		user.AggregateType(),
+		user.ID(),
+		UserRegistered{})
+
+	return user
+}
+
 func (u *User) Register() {
 	u.RaiseEvent(
 		u.AggregateType(),

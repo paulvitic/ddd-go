@@ -57,7 +57,8 @@ func (r *userRepository) Save(user *model.User) error {
 }
 
 func (r *userRepository) Update(user *model.User) error {
-	return r.Save(user)
+	// return r.Save(user)
+	return nil
 }
 
 func (r *userRepository) Load(id ddd.ID) (*model.User, error) {
@@ -69,8 +70,8 @@ func (r *userRepository) Load(id ddd.ID) (*model.User, error) {
 		return nil, err
 	}
 
-	if user, exists := users[id.String()]; exists {
-		return user, nil
+	if _, exists := users[id.String()]; exists {
+		return model.LoadUser(id), nil
 	}
 
 	return nil, fmt.Errorf("user not found with id: %s", id)

@@ -137,7 +137,7 @@ func testGetEndpoint(t *testing.T) {
 // testPostEndpoint tests the POST endpoint
 func testPostEndpoint(t *testing.T) {
 	requestBody := map[string]interface{}{
-		"test": "data",
+		"userId": "1",
 	}
 	jsonBody, _ := json.Marshal(requestBody)
 

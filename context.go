@@ -118,7 +118,7 @@ func (c *Context) resolve(typ reflect.Type, options ...any) (any, error) {
 	name := c.parseResolveOptions(options...)
 
 	if name == "" {
-		// name = ResourceTypeName(typ)
+		name = ResourceName(typ)
 	}
 
 	// Check for circular dependencies
