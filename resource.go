@@ -78,22 +78,12 @@ func (r *resource) Types() []reflect.Type {
 	return r.types
 }
 
-// HasType checks if the resource implements a specific type
-func (r *resource) HasType(t reflect.Type) bool {
-	for _, resourceType := range r.types {
-		if resourceType == t {
-			return true
-		}
-	}
-	return false
-}
-
 func (r *resource) Scope() Scope {
 	return r.scope
 }
 
 // ExecuteLifecycleHook discovers and executes a specific lifecycle hook on an instance
-func (r *resource) ExecuteLifecycleHook(instance any, methodName string) error {
+func ExecuteLifecycleHook(instance any, methodName string) error {
 	instanceValue := reflect.ValueOf(instance)
 
 	method := instanceValue.MethodByName(methodName)

@@ -14,22 +14,28 @@ import (
 
 // Implements ddd.Repository[model.User]
 type userRepository struct {
+	logger   *ddd.Logger
+	dataDir  string
 	filePath string
 	eventBus *ddd.EventBus
 	mu       sync.RWMutex
 }
 
-func NewUserRepository(eventBus *ddd.EventBus, filePersistenceConfig *FilePersistenceConfig) repository.UserRepository {
-	dataDir := filePersistenceConfig.DataDir
-	// TODO move to OnInit()
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		panic(fmt.Sprintf("failed to create data directory: %v", err))
-	}
-
+func NewUserRepository(logger *ddd.Logger, eventBus *ddd.EventBus, filePersistenceConfig *FilePersistenceConfig) repository.UserRepository {
 	return &userRepository{
-		filePath: filepath.Join(dataDir, "users.json"),
+		logger:   logger,
+		dataDir:  filePersistenceConfig.DataDir,
 		eventBus: eventBus,
 	}
+}
+
+func (r *userRepository) OnInit() error {
+	if err := os.MkdirAll(r.dataDir, 0755); err != nil {
+		return err
+	}
+	r.filePath = filepath.Join(r.dataDir, "users.json")
+	r.logger.Info("User repository initialized")
+	return nil
 }
 
 func (r *userRepository) Save(user *model.User) error {

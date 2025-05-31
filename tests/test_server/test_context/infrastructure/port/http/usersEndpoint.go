@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/paulvitic/ddd-go"
+	"github.com/paulvitic/ddd-go/tests/test_server/test_context/domain/model"
 )
 
 // UsersEndpoint represents a test HTTP endpoint
@@ -45,8 +46,11 @@ func (t *UsersEndpoint) Post(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(err)
 	}
 
+	response := make(map[string]any, 0)
+	response["message"] = res.(*model.User).ID().String()
+
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(res)
+	json.NewEncoder(w).Encode(response)
 }
 
 // Post handles POST requests - discovered by method name convention

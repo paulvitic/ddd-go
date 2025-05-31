@@ -156,13 +156,9 @@ func testPostEndpoint(t *testing.T) {
 		t.Fatalf("Failed to decode JSON response: %v", err)
 	}
 
-	expectedMessage := "POST request handled successfully"
+	expectedMessage := "1"
 	if response["message"] != expectedMessage {
 		t.Errorf("Expected message '%s', got '%v'", expectedMessage, response["message"])
-	}
-
-	if response["method"] != "POST" {
-		t.Errorf("Expected method 'POST', got '%v'", response["method"])
 	}
 
 	t.Log("POST endpoint working correctly")

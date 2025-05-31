@@ -192,7 +192,7 @@ func (c *Context) Destroy() error {
 		for _, resource := range implementations {
 			instance := resource.instance.Load()
 			if instance != nil {
-				if err := resource.ExecuteLifecycleHook(instance, "OnDestroy"); err != nil {
+				if err := ExecuteLifecycleHook(instance, "OnDestroy"); err != nil {
 					// return fmt.Errorf("OnDestroy hook failed for %s: %w", ResourceTypeName(resource.Types()[0]), err)
 				}
 			}
@@ -271,11 +271,12 @@ func (c *Context) construct(resource *resource) (any, error) {
 	}
 
 	// Execute lifecycle hooks in order: OnInit -> OnStart
-	if err := resource.ExecuteLifecycleHook(instance, "OnInit"); err != nil {
+	if err := ExecuteLifecycleHook(instance, "OnInit"); err != nil {
 		return nil, fmt.Errorf("OnInit hook failed: %w", err)
 	}
 
-	if err := resource.ExecuteLifecycleHook(instance, "OnStart"); err != nil {
+	// TODO: Not here but with Context start
+	if err := ExecuteLifecycleHook(instance, "OnStart"); err != nil {
 		return nil, fmt.Errorf("OnStart hook failed: %w", err)
 	}
 
