@@ -4,11 +4,16 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"unicode"
 
 	"github.com/gorilla/mux"
 )
+
+type contextKey string
+
+const AppContextKey contextKey = "appContext"
 
 type ContextFactory = func(parent context.Context) *Context
 
@@ -23,15 +28,12 @@ type Context struct {
 }
 
 // NewContext creates a new Container
-func NewContext(parent context.Context, name string) *Context {
+func NewContext(parentCtx context.Context, name string) *Context {
 	loggerResource := Resource(NewLogger)
-	logger, err := loggerResource.Create(nil)
-	if err != nil {
-		panic("failed to instatiate logger")
-	}
+	logger, _ := loggerResource.Create(nil)
 
 	context := &Context{
-		Context:   parent,
+		Context:   parentCtx,
 		logger:    logger.(*Logger),
 		name:      name,
 		resources: make(map[reflect.Type]map[string]*resource),
@@ -65,16 +67,9 @@ func (c *Context) Logger() *Logger {
 	return c.logger
 }
 
-func (c *Context) registerDefaultResources() {
-	c.logger.Info("Registering default resources")
-
-	c.registerResource(Resource(NewInMemoryEventLogConfig))
-	c.registerResource(Resource(NewInMemoryEventLog))
-
-}
-
 func (c *Context) registerResource(rsc *resource) {
 	types := rsc.Types()
+	registeredTypes := make([]string, 0)
 
 	for _, typ := range types {
 		if _, exists := c.resources[typ]; !exists {
@@ -82,15 +77,12 @@ func (c *Context) registerResource(rsc *resource) {
 		}
 
 		c.resources[typ][rsc.Name()] = rsc
-
-		c.logger.Info("%s registered", ResourceTypeName(typ))
+		registeredTypes = append(registeredTypes, ResourceTypeName(typ))
 	}
+	c.logger.Info("resource registered for type(s) %s", strings.Join(registeredTypes, ", "))
 }
 
 func (c *Context) bindEndpoints(router *mux.Router) error {
-	// Create a subrouter for the context
-	router = router.PathPrefix("/" + c.Name()).Subrouter()
-
 	// Resolve all resources using the generic method
 	resources := ResourcesByType[Endpoint](c)
 
@@ -99,7 +91,6 @@ func (c *Context) bindEndpoints(router *mux.Router) error {
 		// contruct the endpoint to get the path and handlers
 		if endpoint, err := c.construct(resource); err != nil {
 			c.logger.Error("can not contruct endpoint %s", name)
-
 		} else {
 			if endpoint, ok := endpoint.(Endpoint); !ok {
 				c.logger.Error("resource is not of type Endpoint")

@@ -4,33 +4,30 @@ import (
 	"math"
 )
 
+type QueryFiler = func(ctx *Context) (QueryResponse, error)
+
 type Query interface {
-	Filter() any
+	Filter(ctx *Context) (QueryResponse, error)
 	PageSize() int
 	PageIndex() int
-	Respond(ctx *Context) (QueryResponse, error)
 }
 
 type query struct {
-	filter    any
+	filter    func(ctx *Context) (QueryResponse, error)
 	pageIndex int
 	pageSize  int
 }
 
-func NewQuery(filter any) Query {
+func NewQuery(filter QueryFiler) Query {
 	return &query{filter, 0, 1}
 }
 
-func NewPagedQuery(filter any, pageIndex int, pageSize int) Query {
+func NewPagedQuery(filter QueryFiler, pageIndex int, pageSize int) Query {
 	return &query{filter, pageIndex, pageSize}
 }
 
-func (c *query) Respond(ctx *Context) (QueryResponse, error) {
-	return NewQueryResponse(nil), nil
-}
-
-func (c *query) Filter() any {
-	return c.filter
+func (c *query) Filter(ctx *Context) (QueryResponse, error) {
+	return c.filter(ctx)
 }
 
 func (c *query) PageSize() int {

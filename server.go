@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"reflect"
 
 	"net/http"
 	"time"
@@ -65,17 +64,11 @@ func NewServer(serverConfig *ServerConfig) *Server {
 // WithContexts registers contexts with the server
 func (s *Server) WithContexts(contextFacories ...ContextFactory) *Server {
 	for _, contextFactory := range contextFacories {
-		results := reflect.ValueOf(contextFactory).Call([]reflect.Value{}) // Pass server context as parent to context ?? Maybe not
-		s.contexts = append(s.contexts, results[0].Interface().(*Context))
+		context := contextFactory(s.ctx)
+		s.contexts = append(s.contexts, context)
 	}
 	return s
 }
-
-// WithContexts registers contexts with the server
-// func (s *Server) WithContexts(contexts ...*Context) *Server {
-// 	s.contexts = contexts
-// 	return s
-// }
 
 // Router returns the server's router
 func (s *Server) Router() *mux.Router {
@@ -166,7 +159,18 @@ func (s *Server) registerHealthCheck() {
 }
 
 func (s *Server) initContexts() {
-	for _, context := range s.contexts {
-		context.bindEndpoints(s.router)
+	for _, ctx := range s.contexts {
+		// Create a subrouter for the context
+		router := s.router.PathPrefix("/" + ctx.Name()).Subrouter()
+		// Apply middleware to inject context into ALL routes
+		router.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				newCtx := context.WithValue(r.Context(), AppContextKey, ctx)
+				r = r.WithContext(newCtx)
+				// Call next handler
+				next.ServeHTTP(w, r)
+			})
+		})
+		ctx.bindEndpoints(router)
 	}
 }

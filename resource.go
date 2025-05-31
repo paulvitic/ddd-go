@@ -28,6 +28,7 @@ func (s Scope) String() string {
 var stereotypes = []reflect.Type{
 	reflect.TypeOf((*Endpoint)(nil)).Elem(),
 	reflect.TypeOf((*EventHandler)(nil)).Elem(),
+	reflect.TypeOf((*MessageConsumer)(nil)).Elem(),
 }
 
 type resource struct {
@@ -49,8 +50,8 @@ func Resource(factory any, options ...any) *resource {
 	if factoryType.NumOut() == 0 || (factoryType.NumOut() == 2 && !factoryType.Out(1).Implements(reflect.TypeOf((*error)(nil)).Elem())) {
 		panic("factory must return (T) or (T, error)")
 	}
-
 	returnType := factoryType.Out(0)
+
 	name, scope := processOptions(returnType, options...)
 
 	// Build the types slice: concrete type first, then stereotype interfaces

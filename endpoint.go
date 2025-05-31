@@ -21,24 +21,26 @@ const (
 )
 
 type Endpoint interface {
-	// Path returns the endpoint's URL path
-	Path() string
+	// Paths returns the endpoint's URL path
+	Paths() []string
 }
 
 func BindEndpoint(endpoint Endpoint, router *mux.Router) {
-	path := endpoint.Path()
-	handlers := requestHandlers(endpoint)
+	paths := endpoint.Paths()
+	for _, path := range paths {
+		handlers := requestHandlers(endpoint)
 
-	for method, methodName := range handlers {
-		// Capture variables for closure
-		currentMethod := method
-		currentMethodName := methodName
+		for method, methodName := range handlers {
+			// Capture variables for closure
+			currentMethod := method
+			currentMethodName := methodName
 
-		handler := func(w http.ResponseWriter, r *http.Request) {
-			callHandlerMethod(endpoint, currentMethodName, w, r)
+			handler := func(w http.ResponseWriter, r *http.Request) {
+				callHandlerMethod(endpoint, currentMethodName, w, r)
+			}
+
+			router.HandleFunc(path, handler).Methods(string(currentMethod))
 		}
-
-		router.HandleFunc(path, handler).Methods(string(currentMethod))
 	}
 }
 
@@ -111,9 +113,8 @@ func isValidHandlerSignature(methodType reflect.Type) bool {
 }
 
 func GetContext(r *http.Request) *Context {
-	if ctx, ok := r.Context().(*Context); !ok {
-		panic("context nort found in request")
-	} else {
-		return ctx
+	if ctx := r.Context().Value(AppContextKey); ctx != nil {
+		return ctx.(*Context)
 	}
+	return nil
 }

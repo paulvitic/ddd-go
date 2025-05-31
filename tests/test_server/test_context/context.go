@@ -12,6 +12,7 @@ import (
 func TestContext(ctx context.Context) *ddd.Context {
 	return ddd.NewContext(ctx, "test").
 		WithResources(
+			ddd.Resource(file.NewFilePersitenceConfig),
 			ddd.Resource(file.NewUsers),
 			ddd.Resource(file.NewUserRepository),
 			ddd.Resource(http.NewTestEndpoint),

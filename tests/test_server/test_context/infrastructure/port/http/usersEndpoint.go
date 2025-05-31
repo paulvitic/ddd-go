@@ -7,24 +7,28 @@ import (
 	"github.com/paulvitic/ddd-go"
 )
 
-// TestEndpoint represents a test HTTP endpoint
-type TestEndpoint struct {
+// UsersEndpoint represents a test HTTP endpoint
+type UsersEndpoint struct {
 	// You can inject other dependencies here if needed
 	Logger *ddd.Logger `resource:""`
+	paths  []string
 }
 
 // NewTestEndpoint is the constructor function for TestEndpoint
-func NewTestEndpoint() *TestEndpoint {
-	return &TestEndpoint{}
+func NewTestEndpoint() *UsersEndpoint {
+	return &UsersEndpoint{
+		// paths: []string{"/users/{userId}", "/users"},
+		paths: []string{"/users/{userId}"},
+	}
 }
 
 // Path returns the endpoint's URL path - required by Endpoint interface
-func (t *TestEndpoint) Path() string {
-	return "/test"
+func (t *UsersEndpoint) Paths() []string {
+	return t.paths
 }
 
 // Post handles POST requests - discovered by method name convention
-func (t *TestEndpoint) Post(w http.ResponseWriter, r *http.Request) {
+func (t *UsersEndpoint) Post(w http.ResponseWriter, r *http.Request) {
 	ctx := ddd.GetContext(r)
 	ctx.Logger().Info("Test endpoint post method called")
 
@@ -46,27 +50,29 @@ func (t *TestEndpoint) Post(w http.ResponseWriter, r *http.Request) {
 }
 
 // Post handles POST requests - discovered by method name convention
-func (t *TestEndpoint) GET(w http.ResponseWriter, r *http.Request) {
+func (t *UsersEndpoint) Get(w http.ResponseWriter, r *http.Request) {
 	ctx := ddd.GetContext(r)
-	ctx.Logger().Info("Test endpoint get method called")
 
+	ctx.Logger().Info("get method called")
 	query, err := ToUserByIdQuery(r)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(err)
 	}
 
-	res, err := query.Respond(ctx)
+	res, err := query.Filter(ctx)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(err)
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(res.Items())
+
 }
 
 // Delete handles DELETE requests - discovered by method name convention
-func (t *TestEndpoint) Delete(w http.ResponseWriter, r *http.Request) {
+func (t *UsersEndpoint) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }

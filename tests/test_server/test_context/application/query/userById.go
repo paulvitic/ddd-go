@@ -9,7 +9,7 @@ type UserById struct {
 	UserId string
 }
 
-func (u *UserById) Respond(ctx *ddd.Context) (ddd.QueryResponse, error) {
+func (u *UserById) Filter(ctx *ddd.Context) (ddd.QueryResponse, error) {
 	users, err := ddd.Resolve[model.Users](ctx)
 	if err != nil {
 		return nil, err

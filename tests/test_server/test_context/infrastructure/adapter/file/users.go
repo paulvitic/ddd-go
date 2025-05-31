@@ -15,9 +15,9 @@ type users struct {
 	mu       sync.RWMutex
 }
 
-func NewUsers() model.Users {
+func NewUsers(filePersistenceConfig *FilePersistenceConfig) model.Users {
 	// Use the same data directory as the repository
-	dataDir := "data"
+	dataDir := filePersistenceConfig.DataDir
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		panic(fmt.Sprintf("failed to create data directory: %v", err))
 	}
@@ -45,7 +45,7 @@ func (u *users) ById(id string) (*model.UserView, error) {
 	}
 
 	// Parse the JSON data
-	var users map[string]*model.User
+	var users map[string]*model.UserView
 	if err := json.Unmarshal(data, &users); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal data: %w", err)
 	}
@@ -57,11 +57,5 @@ func (u *users) ById(id string) (*model.UserView, error) {
 	}
 
 	// Convert User to UserView
-	return &model.UserView{
-		ID:       user.ID().String(),
-		Email:    user.Email,
-		Name:     user.Name,
-		Role:     user.Role,
-		IsActive: user.IsActive,
-	}, nil
+	return user, nil
 }
