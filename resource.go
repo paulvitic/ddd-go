@@ -1,10 +1,10 @@
 package ddd
 
 import (
-	"fmt"
 	"reflect"
 	"sync"
 	"sync/atomic"
+	"unicode"
 )
 
 type Scope int
@@ -34,7 +34,7 @@ var stereotypes = []reflect.Type{
 type resource struct {
 	factory      reflect.Value
 	types        []reflect.Type
-	name         string
+	alias        string
 	scope        Scope
 	instance     atomic.Value
 	initOnce     sync.Once
@@ -42,42 +42,35 @@ type resource struct {
 }
 
 func Resource(factory any, options ...any) *resource {
+
+	// factory must be a function
 	factoryType := reflect.TypeOf(factory)
 	if factoryType.Kind() != reflect.Func {
 		panic("factory must be a function")
 	}
 
-	if factoryType.NumOut() == 0 || (factoryType.NumOut() == 2 && !factoryType.Out(1).Implements(reflect.TypeOf((*error)(nil)).Elem())) {
-		panic("factory must return (T) or (T, error)")
-	}
-	returnType := factoryType.Out(0)
+	alias, scope := processOptions(options...)
 
-	name, scope := processOptions(returnType, options...)
-
-	// Build the types slice: concrete type first, then stereotype interfaces
-	types := []reflect.Type{returnType}
-
-	for _, stereotype := range stereotypes {
-		if returnType.Implements(stereotype) {
-			types = append(types, stereotype)
-		}
-	}
-
-	return &resource{
+	resource := &resource{
 		factory:      reflect.ValueOf(factory),
-		types:        types,
-		name:         name,
+		types:        make([]reflect.Type, 0),
+		alias:        alias,
 		scope:        scope,
 		instancePool: sync.Map{},
 	}
+
+	resource.collectTypes()
+
+	return resource
 }
 
 func (r *resource) Factory() any {
 	return r.factory
 }
 
+// TODO change to alias
 func (r *resource) Name() string {
-	return r.name
+	return r.alias
 }
 
 // Types returns all types (concrete + stereotype interfaces)
@@ -97,41 +90,6 @@ func (r *resource) HasType(t reflect.Type) bool {
 
 func (r *resource) Scope() Scope {
 	return r.scope
-}
-
-func (r *resource) Create(params []reflect.Value) (any, error) {
-	switch r.scope {
-	case Singleton:
-		var err error
-		r.initOnce.Do(func() {
-			var instance any
-			instance, err = r.construct(params)
-			if err == nil {
-				r.instance.Store(instance)
-			}
-		})
-
-		if err != nil {
-			return nil, err
-		}
-
-		return r.instance.Load(), nil
-	case Prototype:
-		// For prototypes, create a new instance each time
-		return r.construct(params)
-	default:
-		return nil, fmt.Errorf("Scope %s not supported", r.scope.String())
-	}
-}
-
-func (r *resource) construct(params []reflect.Value) (any, error) {
-	results := r.factory.Call(params)
-	if len(results) == 2 && !results[1].IsNil() {
-		return nil, results[1].Interface().(error)
-	}
-
-	instance := results[0].Interface()
-	return instance, nil
 }
 
 // ExecuteLifecycleHook discovers and executes a specific lifecycle hook on an instance
@@ -187,36 +145,78 @@ func isLifecycleHook(methodType reflect.Type) bool {
 	return false
 }
 
-func processOptions(typ reflect.Type, options ...any) (string, Scope) {
-	var name string
+func (r *resource) returnType() reflect.Type {
+	factoryType := r.factory.Type()
+
+	if factoryType.NumOut() == 0 || factoryType.NumOut() > 2 {
+		panic("factory must return (T) or (T, error)")
+	}
+	if factoryType.NumOut() == 2 {
+		errorType := reflect.TypeOf((*error)(nil)).Elem()
+		if !factoryType.Out(1).Implements(errorType) {
+			panic("factory must return (T) or (T, error)")
+		}
+	}
+	returnType := factoryType.Out(0)
+
+	// // If it's a pointer, also check the element type
+	// if returnType.Kind() == reflect.Ptr {
+	// 	return returnType.Elem()
+	// }
+
+	return returnType
+}
+
+func (r *resource) collectTypes() {
+	returnType := r.returnType()
+	// Return type may be
+	// a stereotype interface, we need an alias in this case to resolve
+	// an arbitrary interface, alias not manadatory if there is only on such implementation, if there is no alias then we can use the camel case of interface name
+	// a struct (pointer or not) that either implements an arbitrary interface and/or a stereotype interface
+	r.types = append(r.types, returnType)
+
+	if r.alias == "" {
+		r.alias = getDefaultName(returnType)
+	}
+
+	for _, stereotype := range stereotypes {
+		if returnType.AssignableTo(stereotype) {
+			// Check if not already in r.types then append
+			found := false
+			for _, existingType := range r.types {
+				if existingType == stereotype {
+					found = true
+					break
+				}
+			}
+			if !found {
+				r.types = append(r.types, stereotype)
+			}
+		}
+	}
+}
+
+func processOptions(options ...any) (string, Scope) {
+	var alias string
 	scope := Singleton
 
 	for _, option := range options {
 		switch v := option.(type) {
 		case string:
-			name = v
+			alias = v
 		case Scope:
 			scope = v
 		}
 	}
 
-	if name == "" {
-		name = getDefaultName(typ)
-	}
-
-	return name, scope
+	return alias, scope
 }
 
-func ResourceTypeName(typ reflect.Type) string {
-	for typ.Kind() == reflect.Ptr {
-		typ = typ.Elem()
+func getDefaultName(t reflect.Type) string {
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
 	}
-
-	// If it has a name, use it
-	if name := typ.Name(); name != "" {
-		return name
-	}
-
-	// Fallback to string representation
-	return typ.String()
+	runes := []rune(t.Name())
+	runes[0] = unicode.ToLower(runes[0])
+	return string(runes)
 }

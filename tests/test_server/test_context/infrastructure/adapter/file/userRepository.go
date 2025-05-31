@@ -9,18 +9,19 @@ import (
 
 	"github.com/paulvitic/ddd-go"
 	"github.com/paulvitic/ddd-go/tests/test_server/test_context/domain/model"
+	"github.com/paulvitic/ddd-go/tests/test_server/test_context/domain/repository"
 )
 
 // Implements ddd.Repository[model.User]
 type userRepository struct {
 	filePath string
-	eventBus ddd.EventBus
+	eventBus *ddd.EventBus
 	mu       sync.RWMutex
 }
 
-func NewUserRepository(eventBus ddd.EventBus) ddd.Repository[model.User] {
-	// Create data directory if it doesn't exist
-	dataDir := "data"
+func NewUserRepository(eventBus *ddd.EventBus, filePersistenceConfig *FilePersistenceConfig) repository.UserRepository {
+	dataDir := filePersistenceConfig.DataDir
+	// TODO move to OnInit()
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		panic(fmt.Sprintf("failed to create data directory: %v", err))
 	}

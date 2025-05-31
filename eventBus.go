@@ -11,24 +11,8 @@ import (
 // Middleware represents a middleware function that can wrap the dispatch process
 type Middleware func(next HandleEvent) HandleEvent
 
-// EventBus dispatches events to registered handlers with middleware support
-type EventBus interface {
-	// Subscribe registers a handler for an event type
-	Subscribe(handlers []EventHandler)
-	// Dispatch sends an event to all registered handlers through the middleware pipeline
-	Dispatch(event Event) error
-	// WithMiddleware adds middleware to the dispatch pipeline
-	WithMiddleware(middleware ...Middleware) EventBus
-	// Start begins the event bus operations
-	Start() error
-	// Stop gracefully shuts down the event bus
-	Stop() error
-	// IsRunning returns whether the event bus is currently running
-	IsRunning() bool
-}
-
 // eventBus is the standard implementation of the EventBus interface
-type eventBus struct {
+type EventBus struct {
 	ctx           *Context
 	logger        *Logger
 	handlers      map[string][]HandleEvent
@@ -44,10 +28,10 @@ type eventBus struct {
 }
 
 // NewEventBus creates a new event bus
-func NewEventBus(ctx *Context) EventBus {
+func NewEventBus(ctx *Context) *EventBus {
 	ctx.logger.Info("Creating new EventBus")
 
-	eb := &eventBus{
+	eb := &EventBus{
 		ctx:         ctx,
 		logger:      ctx.logger,
 		handlers:    make(map[string][]HandleEvent),
@@ -63,7 +47,7 @@ func NewEventBus(ctx *Context) EventBus {
 }
 
 // WithMiddleware adds middleware to the dispatch pipeline
-func (b *eventBus) WithMiddleware(middleware ...Middleware) EventBus {
+func (b *EventBus) WithMiddleware(middleware ...Middleware) *EventBus {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -77,7 +61,7 @@ func (b *eventBus) WithMiddleware(middleware ...Middleware) EventBus {
 }
 
 // buildDispatchChain constructs the middleware chain with the core dispatch logic at the end
-func (b *eventBus) buildDispatchChain() {
+func (b *EventBus) buildDispatchChain() {
 	// Core dispatch function (the final handler in the chain)
 	coreDispatch := func(ctx *Context, event Event) error {
 		return b.coreDispatch(ctx, event)
@@ -91,7 +75,7 @@ func (b *eventBus) buildDispatchChain() {
 }
 
 // coreDispatch is the original dispatch logic, now called at the end of the middleware chain
-func (b *eventBus) coreDispatch(ctx context.Context, event Event) error {
+func (b *EventBus) coreDispatch(ctx context.Context, event Event) error {
 	// Add event to queue for async processing
 	select {
 	case b.queue <- event:
@@ -106,7 +90,7 @@ func (b *eventBus) coreDispatch(ctx context.Context, event Event) error {
 }
 
 // Subscribe registers handlers for event types
-func (b *eventBus) Subscribe(handlers []EventHandler) {
+func (b *EventBus) Subscribe(handlers []EventHandler) {
 	b.handlersMutex.Lock()
 	defer b.handlersMutex.Unlock()
 
@@ -125,13 +109,13 @@ func (b *eventBus) Subscribe(handlers []EventHandler) {
 }
 
 // Dispatch sends an event through the middleware pipeline
-func (b *eventBus) Dispatch(event Event) error {
+func (b *EventBus) Dispatch(event Event) error {
 	// Execute the middleware chain
 	return b.dispatchChain(b.ctx, event)
 }
 
 // Start begins the event bus operations
-func (b *eventBus) Start() error {
+func (b *EventBus) Start() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -154,7 +138,7 @@ func (b *eventBus) Start() error {
 }
 
 // Stop gracefully shuts down the event bus
-func (b *eventBus) Stop() error {
+func (b *EventBus) Stop() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -188,14 +172,14 @@ func (b *eventBus) Stop() error {
 }
 
 // IsRunning returns whether the event bus is currently running
-func (b *eventBus) IsRunning() bool {
+func (b *EventBus) IsRunning() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.running
 }
 
 // listen is the worker goroutine that processes events from the queue
-func (b *eventBus) listen(ctx context.Context, eventQueue chan Event) {
+func (b *EventBus) listen(ctx context.Context, eventQueue chan Event) {
 	defer b.listenerWg.Done()
 
 	for {
@@ -220,7 +204,7 @@ func (b *eventBus) listen(ctx context.Context, eventQueue chan Event) {
 }
 
 // processEvent executes all registered handlers for an event
-func (b *eventBus) processEvent(event Event) {
+func (b *EventBus) processEvent(event Event) {
 	b.handlersMutex.RLock()
 	handlers, ok := b.handlers[event.Type()]
 	b.handlersMutex.RUnlock()

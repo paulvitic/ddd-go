@@ -2,7 +2,6 @@ package http
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -43,17 +42,7 @@ func ToUserByIdQuery(r *http.Request) (ddd.Query, error) {
 	// defer r.Body.Close()
 
 	vars := mux.Vars(r)
-
-	response := map[string]interface{}{
-		"url":  r.URL.String(),
-		"path": r.URL.Path,
-		"vars": vars,
-	}
-
-	log.Print(response)
-
 	userID := vars["userId"]
-	// userID := r.URL.Query().Get("userId")
 
 	query := &query.UserById{
 		UserId: userID,

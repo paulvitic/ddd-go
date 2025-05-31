@@ -15,10 +15,10 @@ type UsersEndpoint struct {
 }
 
 // NewTestEndpoint is the constructor function for TestEndpoint
-func NewTestEndpoint() *UsersEndpoint {
+func NewUsersEndpoint() *UsersEndpoint {
 	return &UsersEndpoint{
-		// paths: []string{"/users/{userId}", "/users"},
-		paths: []string{"/users/{userId}"},
+		paths: []string{"/users/{userId}", "/users"},
+		// paths: []string{"/users/{userId}"},
 	}
 }
 
@@ -69,7 +69,6 @@ func (t *UsersEndpoint) Get(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(res.Items())
-
 }
 
 // Delete handles DELETE requests - discovered by method name convention

@@ -16,8 +16,9 @@ type users struct {
 }
 
 func NewUsers(filePersistenceConfig *FilePersistenceConfig) model.Users {
-	// Use the same data directory as the repository
+
 	dataDir := filePersistenceConfig.DataDir
+
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		panic(fmt.Sprintf("failed to create data directory: %v", err))
 	}

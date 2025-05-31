@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-	"unicode"
 
 	"github.com/gorilla/mux"
 )
@@ -20,8 +19,9 @@ type ContextFactory = func(parent context.Context) *Context
 // Container represents the dependency injection container
 type Context struct {
 	context.Context
-	logger    *Logger
 	name      string
+	logger    *Logger
+	eventBus  *EventBus
 	resources map[reflect.Type]map[string]*resource
 	resolving sync.Map
 	mu        sync.RWMutex
@@ -29,22 +29,14 @@ type Context struct {
 
 // NewContext creates a new Container
 func NewContext(parentCtx context.Context, name string) *Context {
-	loggerResource := Resource(NewLogger)
-	logger, _ := loggerResource.Create(nil)
-
 	context := &Context{
 		Context:   parentCtx,
-		logger:    logger.(*Logger),
 		name:      name,
+		logger:    NewLogger(),
 		resources: make(map[reflect.Type]map[string]*resource),
 	}
+	context.eventBus = NewEventBus(context)
 	context.logger.Info("%s context created", context.name)
-
-	context.WithResources(
-		loggerResource,
-		Resource(NewEventBus),
-	)
-
 	return context
 }
 
@@ -77,9 +69,14 @@ func (c *Context) registerResource(rsc *resource) {
 		}
 
 		c.resources[typ][rsc.Name()] = rsc
-		registeredTypes = append(registeredTypes, ResourceTypeName(typ))
+
+		typeName := typ.Name()
+		if typeName == "" {
+			typeName = typ.Elem().Name()
+		}
+		registeredTypes = append(registeredTypes, typeName)
 	}
-	c.logger.Info("resource registered for type(s) %s", strings.Join(registeredTypes, ", "))
+	c.logger.Info("registered %s for type(s) %s", rsc.Name(), strings.Join(registeredTypes, ", "))
 }
 
 func (c *Context) bindEndpoints(router *mux.Router) error {
@@ -105,10 +102,23 @@ func (c *Context) bindEndpoints(router *mux.Router) error {
 
 // resolve resolves a dependency from the container
 func (c *Context) resolve(typ reflect.Type, options ...any) (any, error) {
+
+	if typ == reflect.TypeOf(c) {
+		return c, nil
+	}
+
+	if typ == reflect.TypeOf(c.eventBus) {
+		return c.eventBus, nil
+	}
+
+	if typ == reflect.TypeOf(c.logger) {
+		return c.logger, nil
+	}
+
 	name := c.parseResolveOptions(options...)
 
 	if name == "" {
-		name = getDefaultName(typ)
+		// name = ResourceTypeName(typ)
 	}
 
 	// Check for circular dependencies
@@ -183,7 +193,7 @@ func (c *Context) Destroy() error {
 			instance := resource.instance.Load()
 			if instance != nil {
 				if err := resource.ExecuteLifecycleHook(instance, "OnDestroy"); err != nil {
-					return fmt.Errorf("OnDestroy hook failed for %s: %w", ResourceTypeName(resource.Types()[0]), err)
+					// return fmt.Errorf("OnDestroy hook failed for %s: %w", ResourceTypeName(resource.Types()[0]), err)
 				}
 			}
 		}
@@ -214,7 +224,7 @@ func (c *Context) getResource(typ reflect.Type, name string) (*resource, error) 
 	}
 
 	if name == "" {
-		name = getDefaultName(typ)
+		// name = ResourceTypeName(typ)
 	}
 
 	resource, exists := resources[name]
@@ -283,15 +293,6 @@ func (c *Context) resolveFactoryParams(factoryType reflect.Type) ([]reflect.Valu
 		params[i] = reflect.ValueOf(param)
 	}
 	return params, nil
-}
-
-func getDefaultName(t reflect.Type) string {
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-	runes := []rune(t.Name())
-	runes[0] = unicode.ToLower(runes[0])
-	return string(runes)
 }
 
 // ==========================================================

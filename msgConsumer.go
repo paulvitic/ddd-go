@@ -19,7 +19,7 @@ type MessageConsumer interface {
 	Target() string
 
 	// SetEventBus attaches an EventBus to the consumer
-	SetEventBus(eventBus EventBus)
+	SetEventBus(eventBus *EventBus)
 
 	// ProcessMessage handles a single message from the source
 	ProcessMessage(ctx context.Context, msg []byte) error
@@ -42,7 +42,7 @@ type baseMessageConsumer struct {
 	target     string
 	translator MessageTranslator
 	running    atomic.Bool
-	eventBus   EventBus
+	eventBus   *EventBus
 	mutex      sync.RWMutex
 }
 
@@ -52,7 +52,6 @@ func NewBaseMessageConsumer(target string, translator MessageTranslator) *baseMe
 		target:     target,
 		translator: translator,
 		running:    atomic.Bool{}, // Implicitly initialized to false
-		eventBus:   nil,
 	}
 }
 
@@ -62,7 +61,7 @@ func (c *baseMessageConsumer) Target() string {
 }
 
 // SetEventBus attaches an EventBus to the consumer
-func (c *baseMessageConsumer) SetEventBus(eventBus EventBus) {
+func (c *baseMessageConsumer) SetEventBus(eventBus *EventBus) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.eventBus = eventBus

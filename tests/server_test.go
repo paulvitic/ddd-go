@@ -141,7 +141,7 @@ func testPostEndpoint(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(requestBody)
 
-	resp, err := http.Post("http://localhost:8081/api/test", "application/json", bytes.NewBuffer(jsonBody))
+	resp, err := http.Post("http://localhost:8081/test/users", "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		t.Fatalf("Failed to make POST request: %v", err)
 	}
