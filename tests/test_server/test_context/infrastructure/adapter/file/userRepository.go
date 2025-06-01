@@ -97,11 +97,6 @@ func (r *userRepository) Delete(id ddd.ID) error {
 }
 
 func (r *userRepository) loadAll() (map[string]*model.User, error) {
-	// Create file if it doesn't exist
-	if _, err := os.Stat(r.filePath); os.IsNotExist(err) {
-		return make(map[string]*model.User), nil
-	}
-
 	data, err := os.ReadFile(r.filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)

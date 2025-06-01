@@ -19,31 +19,19 @@ func LoadUser(id ddd.ID) *User {
 		true,
 	}
 
-	user.RaiseEvent(
-		user.AggregateType(),
-		user.ID(),
-		UserRegistered{})
+	user.RaiseEvent(UserRegistered{})
 
 	return user
 }
 
 func (u *User) Register() {
-	u.RaiseEvent(
-		u.AggregateType(),
-		u.ID(),
-		UserRegistered{})
+	u.RaiseEvent(UserRegistered{})
 }
 
 func (u *User) Approve() {
-	u.RaiseEvent(
-		u.AggregateType(),
-		u.ID(),
-		UserApproved{})
+	u.RaiseEvent(UserApproved{})
 }
 
 func (u *User) Reject() {
-	u.RaiseEvent(
-		u.AggregateType(),
-		u.ID(),
-		UserRejected{})
+	u.RaiseEvent(UserRejected{})
 }
