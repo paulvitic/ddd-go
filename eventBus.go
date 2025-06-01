@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// Middleware represents a middleware function that can wrap the dispatch process
-type Middleware func(next HandleEvent) HandleEvent
+// EventBusMiddleware represents a middleware function that can wrap the dispatch process
+type EventBusMiddleware func(next HandleEvent) HandleEvent
 
 // eventBus is the standard implementation of the EventBus interface
 type EventBus struct {
@@ -23,7 +23,7 @@ type EventBus struct {
 	workerCount   int
 	listenerWg    sync.WaitGroup
 	mu            sync.RWMutex
-	middleware    []Middleware
+	middleware    []EventBusMiddleware
 	dispatchChain HandleEvent
 }
 
@@ -35,7 +35,7 @@ func NewEventBus(ctx *Context) *EventBus {
 		handlers:    make(map[string][]HandleEvent),
 		queue:       make(chan Event, 100), // Buffer size may come from configuration
 		workerCount: 1,                     // Default to 1 worker, could be configurable
-		middleware:  make([]Middleware, 0),
+		middleware:  make([]EventBusMiddleware, 0),
 	}
 
 	// Initialize the dispatch chain with the core dispatch logic
@@ -46,6 +46,8 @@ func NewEventBus(ctx *Context) *EventBus {
 
 func (b *EventBus) Init() {
 	// TODO Find and add event bus middleware from the context
+
+	// Resolve all event handlers from the context
 	handlers, err := ResolveAll[EventHandler](b.ctx)
 	if err != nil {
 		panic("can not get event handlers")
@@ -54,7 +56,7 @@ func (b *EventBus) Init() {
 }
 
 // WithMiddleware adds middleware to the dispatch pipeline
-func (b *EventBus) WithMiddleware(middleware ...Middleware) *EventBus {
+func (b *EventBus) WithMiddleware(middleware ...EventBusMiddleware) *EventBus {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
