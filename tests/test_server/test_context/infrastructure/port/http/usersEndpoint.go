@@ -4,34 +4,28 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/gorilla/mux"
 	"github.com/paulvitic/ddd-go"
 	"github.com/paulvitic/ddd-go/tests/test_server/test_context/domain/model"
 )
 
 // UsersEndpoint represents a test HTTP endpoint
 type UsersEndpoint struct {
+	ddd.Endpoint
 	// You can inject other dependencies here if needed
-	Logger *ddd.Logger `resource:""`
-	paths  []string
+	//Logger *ddd.Logger `resource:""`
 }
 
 // NewTestEndpoint is the constructor function for TestEndpoint
-func NewUsersEndpoint() *UsersEndpoint {
+func NewUsersEndpoint(logger *ddd.Logger, router *mux.Router) *UsersEndpoint {
+	paths := []string{"/users/{userId}", "/users"}
 	return &UsersEndpoint{
-		paths: []string{"/users/{userId}", "/users"},
-		// paths: []string{"/users/{userId}"},
+		Endpoint: ddd.NewEndpoint(&UsersEndpoint{}, paths, logger, router),
 	}
-}
-
-// Path returns the endpoint's URL path - required by Endpoint interface
-func (t *UsersEndpoint) Paths() []string {
-	return t.paths
 }
 
 // Post handles POST requests - discovered by method name convention
 func (t *UsersEndpoint) Post(w http.ResponseWriter, r *http.Request) {
-	ctx := ddd.GetContext(r)
-	ctx.Logger().Info("Test endpoint post method called")
 
 	command, err := ToResigterUserCommand(r)
 	w.Header().Set("Content-Type", "application/json")
@@ -40,7 +34,7 @@ func (t *UsersEndpoint) Post(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(err)
 	}
 
-	res, err := command.Execute(ctx)
+	res, err := command.Execute()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(err)

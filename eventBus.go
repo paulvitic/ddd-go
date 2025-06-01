@@ -3,7 +3,7 @@ package ddd
 import (
 	"context"
 	"errors"
-	"log"
+	"strings"
 	"sync"
 	"time"
 )
@@ -29,8 +29,6 @@ type EventBus struct {
 
 // NewEventBus creates a new event bus
 func NewEventBus(ctx *Context) *EventBus {
-	ctx.logger.Info("Creating new EventBus")
-
 	eb := &EventBus{
 		ctx:         ctx,
 		logger:      ctx.logger,
@@ -44,6 +42,15 @@ func NewEventBus(ctx *Context) *EventBus {
 	eb.buildDispatchChain()
 
 	return eb
+}
+
+func (b *EventBus) Init() {
+	// TODO Find and add event bus middleware from the context
+	handlers, err := ResolveAll[EventHandler](b.ctx)
+	if err != nil {
+		panic("can not get event handlers")
+	}
+	b.Subscribe(handlers)
 }
 
 // WithMiddleware adds middleware to the dispatch pipeline
@@ -63,8 +70,8 @@ func (b *EventBus) WithMiddleware(middleware ...Middleware) *EventBus {
 // buildDispatchChain constructs the middleware chain with the core dispatch logic at the end
 func (b *EventBus) buildDispatchChain() {
 	// Core dispatch function (the final handler in the chain)
-	coreDispatch := func(ctx *Context, event Event) error {
-		return b.coreDispatch(ctx, event)
+	coreDispatch := func(event Event) error {
+		return b.coreDispatch(event)
 	}
 
 	// Build the chain by wrapping from right to left (last middleware wraps first)
@@ -75,16 +82,23 @@ func (b *EventBus) buildDispatchChain() {
 }
 
 // coreDispatch is the original dispatch logic, now called at the end of the middleware chain
-func (b *EventBus) coreDispatch(ctx context.Context, event Event) error {
+func (b *EventBus) coreDispatch(event Event) error {
+	// Check if event bus is running
+	b.mu.RLock()
+	running := b.running
+	b.mu.RUnlock()
+
+	if !running {
+		return errors.New("event bus is not running")
+	}
+
 	// Add event to queue for async processing
 	select {
 	case b.queue <- event:
 		// Event queued successfully
 		return nil
-	case <-ctx.Done():
-		return ctx.Err()
 	default:
-		// Queue is full
+		// Queue is full - this is non-blocking
 		return errors.New("event queue is full, event not published")
 	}
 }
@@ -103,7 +117,9 @@ func (b *EventBus) Subscribe(handlers []EventHandler) {
 			}
 
 			b.handlers[eventType] = append(b.handlers[eventType], handlerFunc)
-			log.Printf("Subscribed handler to %s event", eventType)
+
+			eventTypeParts := strings.Split(eventType, ".")
+			b.logger.Info("subscribed handler to event %s", eventTypeParts[len(eventTypeParts)-1])
 		}
 	}
 }
@@ -111,7 +127,7 @@ func (b *EventBus) Subscribe(handlers []EventHandler) {
 // Dispatch sends an event through the middleware pipeline
 func (b *EventBus) Dispatch(event Event) error {
 	// Execute the middleware chain
-	return b.dispatchChain(b.ctx, event)
+	return b.dispatchChain(event)
 }
 
 // Start begins the event bus operations
@@ -216,15 +232,15 @@ func (b *EventBus) processEvent(event Event) {
 
 	// Execute all handlers for this event
 	var errs []error
-	for _, handler := range handlers {
-		if err := handler(b.ctx, event); err != nil {
-			log.Printf("Error handling event %s: %v", event.Type(), err)
+	for _, handle := range handlers {
+		if err := handle(event); err != nil {
+			b.logger.Error("Error handling event %s: %v", event.Type(), err)
 			errs = append(errs, err)
 			// Continue processing other handlers even if one fails
 		}
 	}
 
 	if len(errs) > 0 {
-		log.Printf("Errors encountered while processing event %s: %d errors", event.Type(), len(errs))
+		b.logger.Error("Errors encountered while processing event %s: %d errors", event.Type(), len(errs))
 	}
 }

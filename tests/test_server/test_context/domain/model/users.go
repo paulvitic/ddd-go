@@ -1,7 +1,7 @@
 package model
 
 // User represents a user in the system from the admin context perspective
-type UserView struct {
+type UserProjection struct {
 	ID       string
 	Email    string
 	Name     string
@@ -10,7 +10,7 @@ type UserView struct {
 }
 
 // Users defines the contract for querying users
-type Users interface {
+type UsersView interface {
 	// ById retrieves a user by their ID
-	ById(id string) (*UserView, error)
+	ById(id string) (*UserProjection, error)
 }

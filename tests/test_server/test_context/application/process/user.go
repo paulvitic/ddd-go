@@ -7,28 +7,32 @@ import (
 )
 
 type userProcessor struct {
+	repo repository.UserRepository
 }
 
-func UserProcessor() ddd.EventHandler {
-	return &userProcessor{}
+func UserProcessor(ctx *ddd.Context) ddd.EventHandler {
+	if repo, err := ddd.Resolve[repository.UserRepository](ctx); err != nil {
+		panic("repo nor found")
+	} else {
+		return &userProcessor{
+			repo: repo,
+		}
+	}
 }
 
 func (u *userProcessor) SubscribedTo() map[string]ddd.HandleEvent {
 	subscriptions := make(map[string]ddd.HandleEvent)
+	// TODO improve event type extraction code
 	subscriptions[ddd.EventType(model.UserRegistered{})] = u.onRegistered
 	return subscriptions
 }
 
-func (u *userProcessor) onRegistered(ctx *ddd.Context, event ddd.Event) error {
-	if repo, err := ddd.Resolve[repository.UserRepository](ctx); err != nil {
+func (u *userProcessor) onRegistered(event ddd.Event) error {
+	if user, err := u.repo.Load(event.AggregateID()); err != nil {
 		return err
 	} else {
-		if user, err := repo.Load(event.AggregateID()); err != nil {
-			return err
-		} else {
-			user.Approve()
-			repo.Update(user)
-			return nil
-		}
+		user.Approve()
+		u.repo.Update(user)
+		return nil
 	}
 }

@@ -15,7 +15,7 @@ type users struct {
 	mu       sync.RWMutex
 }
 
-func NewUsers(filePersistenceConfig *FilePersistenceConfig) model.Users {
+func NewUsersView(filePersistenceConfig *FilePersistenceConfig) model.UsersView {
 
 	dataDir := filePersistenceConfig.DataDir
 
@@ -28,7 +28,7 @@ func NewUsers(filePersistenceConfig *FilePersistenceConfig) model.Users {
 	}
 }
 
-func (u *users) ById(id string) (*model.UserView, error) {
+func (u *users) ById(id string) (*model.UserProjection, error) {
 	u.mu.RLock()
 	defer u.mu.RUnlock()
 
@@ -46,7 +46,7 @@ func (u *users) ById(id string) (*model.UserView, error) {
 	}
 
 	// Parse the JSON data
-	var users map[string]*model.UserView
+	var users map[string]*model.UserProjection
 	if err := json.Unmarshal(data, &users); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal data: %w", err)
 	}

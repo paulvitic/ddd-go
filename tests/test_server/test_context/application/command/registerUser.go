@@ -7,24 +7,26 @@ import (
 
 type RegisterUser struct {
 	userId ddd.ID
+	repo   repository.UserRepository
 }
 
-func NewRegisterUser(userId ddd.ID) *RegisterUser {
-	return &RegisterUser{
-		userId: userId,
-	}
-}
-
-func (c *RegisterUser) Execute(ctx *ddd.Context) (any, error) {
+func NewRegisterUser(userId ddd.ID, ctx *ddd.Context) *RegisterUser {
 	repo, err := ddd.Resolve[repository.UserRepository](ctx)
 	if err != nil {
 		panic("repo not found")
 	}
-	user, err := repo.Load(c.userId)
+	return &RegisterUser{
+		userId: userId,
+		repo:   repo,
+	}
+}
+
+func (c *RegisterUser) Execute() (any, error) {
+	user, err := c.repo.Load(c.userId)
 	if err != nil {
 		panic("can not find user")
 	}
 	user.Register()
-	repo.Update(user)
+	c.repo.Update(user)
 	return user, nil
 }

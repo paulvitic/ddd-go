@@ -1,7 +1,6 @@
 package ddd
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -14,9 +13,9 @@ type EventLog interface {
 	// EventsOfType retrieves all events of a specific type
 	EventsOfType(eventType string) ([]Event, error)
 	// Append adds a single event to the log
-	Append(ctx context.Context, event Event) error
+	Append(event Event) error
 	// AppendFrom adds all events from an aggregate to the log
-	AppendFrom(ctx context.Context, aggregate Aggregate) error
+	AppendFrom(aggregate Aggregate) error
 	// Close cleans up resources
 	Close() error
 }
@@ -61,16 +60,16 @@ func NewInMemoryEventLog(config *InMemoryEventLogConfig) EventLog {
 
 // Middleware returns the middleware function for event logging
 func (e *inMemoryEventLog) Middleware(next HandleEvent) HandleEvent {
-	return func(ctx *Context, event Event) error {
+	return func(event Event) error {
 		// Log the event before passing to next middleware
-		if err := e.Append(ctx, event); err != nil {
+		if err := e.Append(event); err != nil {
 			e.logger.Error("Failed to append event to log: %v", err)
 			// Decide whether to continue or fail the dispatch
 			// For now, we'll continue but you might want to make this configurable
 		}
 
 		// Continue to next middleware/handler
-		return next(ctx, event)
+		return next(event)
 	}
 }
 
@@ -108,20 +107,13 @@ func (e *inMemoryEventLog) EventsOfType(eventType string) ([]Event, error) {
 }
 
 // Append adds a single event to the log
-func (e *inMemoryEventLog) Append(ctx context.Context, event Event) error {
+func (e *inMemoryEventLog) Append(event Event) error {
 	if event == nil {
 		return errors.New("event cannot be nil")
 	}
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
-
-	// Check context cancellation
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
 
 	// Store by aggregate
 	aggregateKey := event.AggregateType() + ":" + event.AggregateID().String()
@@ -138,7 +130,7 @@ func (e *inMemoryEventLog) Append(ctx context.Context, event Event) error {
 }
 
 // AppendFrom adds all events from an aggregate to the log
-func (e *inMemoryEventLog) AppendFrom(ctx context.Context, aggregate Aggregate) error {
+func (e *inMemoryEventLog) AppendFrom(aggregate Aggregate) error {
 	if aggregate == nil {
 		return errors.New("aggregate cannot be nil")
 	}
@@ -150,7 +142,7 @@ func (e *inMemoryEventLog) AppendFrom(ctx context.Context, aggregate Aggregate) 
 
 	var errs []error
 	for _, event := range events {
-		if err := e.Append(ctx, event); err != nil {
+		if err := e.Append(event); err != nil {
 			errs = append(errs, fmt.Errorf("failed to append event %s: %w", event.Type(), err))
 		}
 	}

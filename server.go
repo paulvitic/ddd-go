@@ -50,6 +50,7 @@ func NewServerConfig(configPath ...string) *ServerConfig {
 // NewServer creates a new server instance
 func NewServer(serverConfig *ServerConfig) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
+
 	return &Server{
 		logger:   NewLogger(),
 		port:     serverConfig.Port,
@@ -64,7 +65,7 @@ func NewServer(serverConfig *ServerConfig) *Server {
 // WithContexts registers contexts with the server
 func (s *Server) WithContexts(contextFacories ...ContextFactory) *Server {
 	for _, contextFactory := range contextFacories {
-		context := contextFactory(s.ctx)
+		context := contextFactory(s.ctx, s.router)
 		s.contexts = append(s.contexts, context)
 	}
 	return s
@@ -77,8 +78,11 @@ func (s *Server) Router() *mux.Router {
 
 // Start initializes and starts the server
 func (s *Server) Start() error {
+	// for _, ctx := range s.contexts {
+	// 	ctx.Init()
+	// }
 
-	s.initContexts()
+	//s.initContexts()
 	// Register health check endpoint
 	s.registerHealthCheck()
 
@@ -155,22 +159,5 @@ func (s *Server) registerHealthCheck() {
 		fmt.Fprintf(w, "Status: UP")
 	}).Methods("GET")
 
-	s.logger.Info("Registered health check endpoint at /")
-}
-
-func (s *Server) initContexts() {
-	for _, ctx := range s.contexts {
-		// Create a subrouter for the context
-		router := s.router.PathPrefix("/" + ctx.Name()).Subrouter()
-		// Apply middleware to inject context into ALL routes
-		router.Use(func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				newCtx := context.WithValue(r.Context(), AppContextKey, ctx)
-				r = r.WithContext(newCtx)
-				// Call next handler
-				next.ServeHTTP(w, r)
-			})
-		})
-		ctx.bindEndpoints(router)
-	}
+	s.logger.Info("registered health check endpoint at GET /")
 }

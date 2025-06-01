@@ -24,23 +24,12 @@ func ToResigterUserCommand(r *http.Request) (*command.RegisterUser, error) {
 		return nil, err
 	}
 	defer r.Body.Close()
-	return command.NewRegisterUser(ddd.NewID(data.UserId)), nil
+
+	ctx := ddd.GetContext(r)
+	return command.NewRegisterUser(ddd.NewID(data.UserId), ctx), nil
 }
 
 func ToUserByIdQuery(r *http.Request) (ddd.Query, error) {
-	// type RequestData struct {
-	// 	UserId string
-	// }
-	// var data RequestData
-	// // Decode directly from request body
-	// decoder := json.NewDecoder(r.Body)
-	// // decoder.DisallowUnknownFields() // Optional: reject unknown fields
-
-	// if err := decoder.Decode(&data); err != nil {
-	// 	return nil, err
-	// }
-	// defer r.Body.Close()
-
 	vars := mux.Vars(r)
 	userID := vars["userId"]
 

@@ -10,7 +10,7 @@ type UserById struct {
 }
 
 func (u *UserById) Filter(ctx *ddd.Context) (ddd.QueryResponse, error) {
-	users, err := ddd.Resolve[model.Users](ctx)
+	users, err := ddd.Resolve[model.UsersView](ctx)
 	if err != nil {
 		return nil, err
 	}

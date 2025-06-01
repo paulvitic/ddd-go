@@ -13,7 +13,7 @@ type Query interface {
 }
 
 type query struct {
-	filter    func(ctx *Context) (QueryResponse, error)
+	filter    QueryFiler
 	pageIndex int
 	pageSize  int
 }
