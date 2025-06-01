@@ -325,24 +325,7 @@ func (c *Context) resolveFactoryParams(factoryType reflect.Type) ([]reflect.Valu
 // ==========================================================
 // Generic functions
 // ==========================================================
-// to resolve all instances of a specific interface
-func ResourcesByType[T any](c *Context) map[string]*resource {
-	targetType := reflect.TypeOf((*T)(nil)).Elem()
-
-	results := make(map[string]*resource)
-
-	for typ, resources := range c.resources {
-		// Check if the registered type implements or matches the target type
-		if typ.AssignableTo(targetType) || typ == targetType {
-			for name, resource := range resources {
-				results[name] = resource
-			}
-		}
-	}
-
-	return results
-}
-
+// ResolveAll resolves all instances of a specific interface
 func ResolveAll[T any](c *Context) ([]T, error) {
 	targetType := reflect.TypeOf((*T)(nil)).Elem()
 

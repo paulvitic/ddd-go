@@ -26,7 +26,7 @@ type Logger struct {
 func NewLogger() *Logger {
 	return &Logger{
 		Logger:     log.New(os.Stdout, "", 0),
-		dateFormat: "2006-01-02 15:04:05.000 -07:00",
+		dateFormat: "2006-01-02 15:04:05.000",
 	}
 }
 
@@ -47,7 +47,7 @@ func (l *Logger) getCallerInfo(skipFrames int) string {
 func (l *Logger) formatLogEntry(level, caller, format string, args ...any) string {
 	timestamp := time.Now().Format(l.dateFormat)
 	message := fmt.Sprintf(format, args...)
-	return fmt.Sprintf("[%s] %s %s: %s", timestamp, level, caller, message)
+	return fmt.Sprintf("%s %s %s: %s", timestamp, level, caller, message)
 }
 
 // SetOutput changes the output destination for the default logger
