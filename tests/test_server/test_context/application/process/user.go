@@ -22,17 +22,17 @@ func UserProcessor(ctx *ddd.Context) ddd.EventHandler {
 
 func (u *userProcessor) SubscribedTo() map[string]ddd.HandleEvent {
 	subscriptions := make(map[string]ddd.HandleEvent)
-	// TODO improve event type extraction code
 	subscriptions[ddd.EventType(model.UserRegistered{})] = u.onRegistered
 	return subscriptions
 }
 
 func (u *userProcessor) onRegistered(event ddd.Event) error {
-	if user, err := u.repo.Load(event.AggregateID()); err != nil {
+	user, err := u.repo.Load(event.AggregateID())
+	if err != nil {
 		return err
-	} else {
-		user.Approve()
-		u.repo.Update(user)
-		return nil
 	}
+	user.Approve()
+	u.repo.Update(user)
+	return nil
+
 }

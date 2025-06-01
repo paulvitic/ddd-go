@@ -78,13 +78,13 @@ func (s *Server) Router() *mux.Router {
 
 // Start initializes and starts the server
 func (s *Server) Start() error {
-	// for _, ctx := range s.contexts {
-	// 	ctx.Init()
-	// }
-
-	//s.initContexts()
 	// Register health check endpoint
 	s.registerHealthCheck()
+
+	// Start all contexts
+	for _, ctx := range s.contexts {
+		ctx.Start()
+	}
 
 	// Create HTTP server
 	addr := fmt.Sprintf("%s:%d", s.host, s.port)

@@ -55,16 +55,12 @@ func (r *userRepository) Save(user *model.User) error {
 	if err := r.saveAll(users); err != nil {
 		return err
 	} else {
-		for _, event := range user.GetAllEvents() {
-			r.eventBus.Dispatch(event)
-		}
-		return nil
+		return r.eventBus.DispatchFrom(user)
 	}
 }
 
 func (r *userRepository) Update(user *model.User) error {
-	// return r.Save(user)
-	return nil
+	return r.eventBus.DispatchFrom(user)
 }
 
 func (r *userRepository) Load(id ddd.ID) (*model.User, error) {

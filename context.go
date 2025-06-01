@@ -73,6 +73,14 @@ func (c *Context) WithResources(resources ...*resource) *Context {
 	return c
 }
 
+func (c *Context) Start() error {
+
+	c.eventBus.Start()
+
+	c.logger.Info("context '%s' started", c.name)
+	return nil
+}
+
 func (c *Context) Logger() *Logger {
 	return c.logger
 }

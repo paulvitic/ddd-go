@@ -1,9 +1,15 @@
 package model
 
-import "github.com/paulvitic/ddd-go"
+import (
+	"fmt"
+	"time"
+
+	"github.com/paulvitic/ddd-go"
+)
 
 type User struct {
 	ddd.Aggregate
+	logger   *ddd.Logger
 	Email    string
 	Name     string
 	Role     string
@@ -13,23 +19,26 @@ type User struct {
 func LoadUser(id ddd.ID) *User {
 	user := &User{
 		ddd.NewAggregate(id, User{}),
+		ddd.NewLogger(),
 		"",
 		"",
 		"",
 		true,
 	}
 
-	user.RaiseEvent(UserRegistered{})
-
 	return user
 }
 
 func (u *User) Register() {
-	u.RaiseEvent(UserRegistered{})
+	u.RaiseEvent(UserRegistered{
+		ProcessingID: fmt.Sprintf("proc-%d", time.Now().UnixNano()),
+	})
+	u.logger.Info("registered user %s", u.ID().String())
 }
 
 func (u *User) Approve() {
 	u.RaiseEvent(UserApproved{})
+	u.logger.Info("approved user %s", u.ID().String())
 }
 
 func (u *User) Reject() {

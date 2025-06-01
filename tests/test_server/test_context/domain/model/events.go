@@ -1,6 +1,8 @@
 package model
 
-type UserRegistered struct{}
+type UserRegistered struct {
+	ProcessingID string
+}
 
 type UserApproved struct{}
 

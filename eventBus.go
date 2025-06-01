@@ -3,6 +3,7 @@ package ddd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -97,7 +98,6 @@ func (b *EventBus) coreDispatch(event Event) error {
 	// Add event to queue for async processing
 	select {
 	case b.queue <- event:
-		// Event queued successfully
 		return nil
 	default:
 		// Queue is full - this is non-blocking
@@ -124,12 +124,26 @@ func (b *EventBus) Subscribe(handlers []EventHandler) {
 			b.logger.Info("subscribed handler to event %s", eventTypeParts[len(eventTypeParts)-1])
 		}
 	}
+
 }
 
 // Dispatch sends an event through the middleware pipeline
 func (b *EventBus) Dispatch(event Event) error {
 	// Execute the middleware chain
 	return b.dispatchChain(event)
+}
+
+// Dispatch sends an event through the middleware pipeline
+func (b *EventBus) DispatchFrom(aggregate Aggregate) error {
+	for _, event := range aggregate.GetAllEvents() {
+		err := b.Dispatch(event)
+		if err != nil {
+			return err
+		}
+	}
+	// Clear events after dispatching
+	aggregate.ClearEvents()
+	return nil
 }
 
 // Start begins the event bus operations
@@ -151,7 +165,7 @@ func (b *EventBus) Start() error {
 		go b.listen(ctx, b.queue)
 	}
 
-	b.logger.Info("Event bus started with %d workers", b.workerCount)
+	b.logger.Info("event bus started with %d workers", b.workerCount)
 	return nil
 }
 
@@ -200,22 +214,25 @@ func (b *EventBus) IsRunning() bool {
 func (b *EventBus) listen(ctx context.Context, eventQueue chan Event) {
 	defer b.listenerWg.Done()
 
+	workerID := fmt.Sprintf("worker-%d", time.Now().UnixNano()%1000) // Simple worker ID
+	b.logger.Info("worker %s started", workerID)
+
 	for {
 		select {
 		case event, ok := <-eventQueue:
 			if !ok {
-				// Channel was closed
+				b.logger.Info("worker %s: Channel was closed", workerID)
 				return
 			}
 			// Process the event by calling registered handlers
 			b.processEvent(event)
 
 		case <-b.stopCh:
-			// Event bus is being stopped
+			b.logger.Info("worker %s: Event bus is being stopped", workerID)
 			return
 
 		case <-ctx.Done():
-			// Context was cancelled
+			b.logger.Info("worker %s: Context was cancelled", workerID)
 			return
 		}
 	}
