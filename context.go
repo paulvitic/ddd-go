@@ -1,45 +1,60 @@
 package ddd
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"reflect"
+	"strings"
 	"sync"
-	"unicode"
 
 	"github.com/gorilla/mux"
 )
 
+type contextKey string
+
+const AppContextKey contextKey = "appContext"
+
+type ContextFactory = func(parent context.Context, router *mux.Router) *Context
+
 // Container represents the dependency injection container
 type Context struct {
-	log       *Logger
+	context.Context
 	name      string
+	logger    *Logger
+	router    *mux.Router
+	eventBus  *EventBus
 	resources map[reflect.Type]map[string]*resource
 	resolving sync.Map
 	mu        sync.RWMutex
 }
 
 // NewContext creates a new Container
-func NewContext(name string) *Context {
-	loggerResource := Resource(NewLogger)
-	logger, err := loggerResource.Create(nil)
-	if err != nil {
-		panic("failed to instatiate logger")
-	}
-
-	context := &Context{
-		log:       logger.(*Logger),
+func NewContext(parentCtx context.Context, router *mux.Router, name string) *Context {
+	newCtx := &Context{
+		Context:   parentCtx,
 		name:      name,
+		logger:    NewLogger(),
 		resources: make(map[reflect.Type]map[string]*resource),
 	}
-	context.log.Info("%s context created", context.name)
 
-	context.WithResources(
-		loggerResource,
-		Resource(NewEventBus),
-		Resource(NewCommandBus),
-	)
+	newCtx.logger.Info("%s context created", newCtx.name)
 
-	return context
+	ctxRouter := router.PathPrefix("/" + newCtx.name).Subrouter()
+	// Apply middleware to inject context into ALL routes
+	ctxRouter.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			reqCtx := context.WithValue(r.Context(), AppContextKey, newCtx)
+			r = r.WithContext(reqCtx)
+			// Call next handler
+			next.ServeHTTP(w, r)
+		})
+	})
+	newCtx.router = ctxRouter
+
+	newCtx.eventBus = NewEventBus(newCtx)
+
+	return newCtx
 }
 
 func (c *Context) Name() string {
@@ -54,21 +69,25 @@ func (c *Context) WithResources(resources ...*resource) *Context {
 		c.registerResource(resource)
 	}
 
+	c.init()
 	return c
 }
 
-func (c *Context) registerDefaultResources() {
-	c.log.Info("Registering default resources")
+func (c *Context) Start() error {
 
-	c.registerResource(Resource(NewInMemoryEventLogConfig))
-	c.registerResource(Resource(NewInMemoryEventLog))
+	c.eventBus.Start()
 
-	c.registerResource(Resource(NewEventListenerConfig))
-	c.registerResource(Resource(NewEventListener))
+	c.logger.Info("context '%s' started", c.name)
+	return nil
+}
+
+func (c *Context) Logger() *Logger {
+	return c.logger
 }
 
 func (c *Context) registerResource(rsc *resource) {
 	types := rsc.Types()
+	registeredTypes := make([]string, 0)
 
 	for _, typ := range types {
 		if _, exists := c.resources[typ]; !exists {
@@ -77,50 +96,63 @@ func (c *Context) registerResource(rsc *resource) {
 
 		c.resources[typ][rsc.Name()] = rsc
 
-		c.log.Info("%s registered", ResourceTypeName(typ))
-
-		// if rsc.scope == Singleton {
-		// 	c.log.Info("Initializing singleton resource: %s", ResourceTypeName(typ))
-
-		// 	// Construct the singleton instance
-		// 	if _, err := c.resolveSingleton(rsc); err != nil {
-		// 		c.log.Error("Failed to initialize singleton %s: %v", ResourceTypeName(typ), err)
-		// 	}
-		// }
+		typeName := typ.Name()
+		if typeName == "" {
+			typeName = typ.Elem().Name()
+		}
+		registeredTypes = append(registeredTypes, typeName)
 	}
+	c.logger.Info("registered %s for type(s) %s", rsc.Name(), strings.Join(registeredTypes, ", "))
 }
 
-func (c *Context) bindEndpoints(router *mux.Router) error {
-	// Create a subrouter for the context
-	router = router.PathPrefix("/" + c.Name()).Subrouter()
+func (c *Context) init() error {
 
-	// Resolve all resources using the generic method
-	resources := ResourcesByType[Endpoint](c)
+	c.eventBus.Init()
 
-	// Bind each endpoint
-	for name, resource := range resources {
-		// contruct the endpoint to get the path and handlers
-		if endpoint, err := c.construct(resource); err != nil {
-			c.log.Error("can not contruct endpoint %s", name)
-
-		} else {
-			if endpoint, ok := endpoint.(Endpoint); !ok {
-				c.log.Error("resource is not of type Endpoint")
-			} else {
-				BindEndpoint(endpoint, router)
+	for _, resourceTypes := range c.resources {
+		for _, resource := range resourceTypes {
+			switch resource.scope {
+			case Singleton:
+				// For singletons, we should have already created an instance
+				if _, err := c.resolveSingleton(resource); err != nil {
+					return err
+				}
+			case Prototype:
+				// For prototypes, create a new instance each time
+				if _, err := c.construct(resource); err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("unknown scope: %v", resource.scope)
 			}
 		}
 	}
-
 	return nil
 }
 
 // resolve resolves a dependency from the container
 func (c *Context) resolve(typ reflect.Type, options ...any) (any, error) {
+
+	if typ == reflect.TypeOf(c) {
+		return c, nil
+	}
+
+	if typ == reflect.TypeOf(c.router) {
+		return c.router, nil
+	}
+
+	if typ == reflect.TypeOf(c.eventBus) {
+		return c.eventBus, nil
+	}
+
+	if typ == reflect.TypeOf(c.logger) {
+		return c.logger, nil
+	}
+
 	name := c.parseResolveOptions(options...)
 
 	if name == "" {
-		name = getDefaultName(typ)
+		name = ResourceName(typ)
 	}
 
 	// Check for circular dependencies
@@ -194,8 +226,8 @@ func (c *Context) Destroy() error {
 		for _, resource := range implementations {
 			instance := resource.instance.Load()
 			if instance != nil {
-				if err := resource.ExecuteLifecycleHook(instance, "OnDestroy"); err != nil {
-					return fmt.Errorf("OnDestroy hook failed for %s: %w", ResourceTypeName(resource.Types()[0]), err)
+				if err := ExecuteLifecycleHook(instance, "OnDestroy"); err != nil {
+					// return fmt.Errorf("OnDestroy hook failed for %s: %w", ResourceTypeName(resource.Types()[0]), err)
 				}
 			}
 		}
@@ -226,7 +258,7 @@ func (c *Context) getResource(typ reflect.Type, name string) (*resource, error) 
 	}
 
 	if name == "" {
-		name = getDefaultName(typ)
+		// name = ResourceTypeName(typ)
 	}
 
 	resource, exists := resources[name]
@@ -273,13 +305,14 @@ func (c *Context) construct(resource *resource) (any, error) {
 	}
 
 	// Execute lifecycle hooks in order: OnInit -> OnStart
-	if err := resource.ExecuteLifecycleHook(instance, "OnInit"); err != nil {
+	if err := ExecuteLifecycleHook(instance, "OnInit"); err != nil {
 		return nil, fmt.Errorf("OnInit hook failed: %w", err)
 	}
 
-	if err := resource.ExecuteLifecycleHook(instance, "OnStart"); err != nil {
-		return nil, fmt.Errorf("OnStart hook failed: %w", err)
-	}
+	// TODO: Not here but with Context start
+	// if err := ExecuteLifecycleHook(instance, "OnStart"); err != nil {
+	// 	return nil, fmt.Errorf("OnStart hook failed: %w", err)
+	// }
 
 	return instance, nil
 }
@@ -297,37 +330,39 @@ func (c *Context) resolveFactoryParams(factoryType reflect.Type) ([]reflect.Valu
 	return params, nil
 }
 
-func getDefaultName(t reflect.Type) string {
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-	runes := []rune(t.Name())
-	runes[0] = unicode.ToLower(runes[0])
-	return string(runes)
-}
-
 // ==========================================================
 // Generic functions
 // ==========================================================
-// to resolve all instances of a specific interface
-func ResourcesByType[T any](c *Context) map[string]*resource {
+// ResolveAll resolves all instances of a specific interface
+func ResolveAll[T any](c *Context) ([]T, error) {
 	targetType := reflect.TypeOf((*T)(nil)).Elem()
 
-	results := make(map[string]*resource)
-
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
+	results := make([]T, 0)
 	for typ, resources := range c.resources {
 		// Check if the registered type implements or matches the target type
 		if typ.AssignableTo(targetType) || typ == targetType {
-			for name, resource := range resources {
-				results[name] = resource
+			for _, resource := range resources {
+				switch resource.scope {
+				case Singleton:
+					// For singletons, we should have already created an instance
+					instance, err := c.resolveSingleton(resource)
+					if err == nil {
+						results = append(results, instance.(T))
+					}
+				case Prototype:
+					// For prototypes, create a new instance each time
+					instance, err := c.construct(resource)
+					if err == nil {
+						results = append(results, instance.(T))
+					}
+				default:
+					return nil, fmt.Errorf("unknown scope: %v", resource.scope)
+				}
 			}
 		}
 	}
 
-	return results
+	return results, nil
 }
 
 func Resolve[T any](c *Context, options ...any) (T, error) {

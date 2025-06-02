@@ -8,7 +8,6 @@ import (
 )
 
 type Event interface {
-	// Context() string
 	AggregateType() string
 	AggregateID() ID
 	Type() string

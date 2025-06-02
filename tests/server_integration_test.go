@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/paulvitic/ddd-go"
+	"github.com/paulvitic/ddd-go/tests/test_server/test_context"
 )
 
 // TestServerLifecycle tests the complete server lifecycle with proper setup and teardown
@@ -19,14 +20,8 @@ func TestServerLifecycle(t *testing.T) {
 		baseURL = "http://localhost:8083"
 	)
 
-	// Setup: Create context and server
-	testContext := ddd.NewContext("api").
-		WithResources(
-			ddd.Resource(NewTestEndpoint),
-		)
-
 	server := ddd.NewServer(ddd.NewServerConfig("configs/server_integration")).
-		WithContexts(testContext)
+		WithContexts(test_context.TestContext)
 
 	// Start server
 	serverDone := make(chan error, 1)

@@ -2,36 +2,32 @@ package ddd
 
 import (
 	"math"
-	"reflect"
 )
 
+type QueryFiler = func(ctx *Context) (QueryResponse, error)
+
 type Query interface {
-	Type() string
-	Filter() any
+	Filter(ctx *Context) (QueryResponse, error)
 	PageSize() int
 	PageIndex() int
 }
 
 type query struct {
-	filter    any
+	filter    QueryFiler
 	pageIndex int
 	pageSize  int
 }
 
-func NewQuery(filter any) Query {
+func NewQuery(filter QueryFiler) Query {
 	return &query{filter, 0, 1}
 }
 
-func NewPagedQuery(filter any, pageIndex int, pageSize int) Query {
+func NewPagedQuery(filter QueryFiler, pageIndex int, pageSize int) Query {
 	return &query{filter, pageIndex, pageSize}
 }
 
-func (c *query) Type() string {
-	return reflect.TypeOf(c.Filter()).PkgPath() + "." + reflect.TypeOf(c.Filter()).Name()
-}
-
-func (c *query) Filter() any {
-	return c.filter
+func (c *query) Filter(ctx *Context) (QueryResponse, error) {
+	return c.filter(ctx)
 }
 
 func (c *query) PageSize() int {
@@ -99,8 +95,4 @@ func (qr *queryResponse) Next() int {
 		return qr.PageNumber() + 1
 	}
 	return 0
-}
-
-func QueryType(filter any) string {
-	return reflect.TypeOf(filter).PkgPath() + "." + reflect.TypeOf(filter).Name()
 }

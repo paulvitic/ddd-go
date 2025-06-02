@@ -50,6 +50,7 @@ func NewServerConfig(configPath ...string) *ServerConfig {
 // NewServer creates a new server instance
 func NewServer(serverConfig *ServerConfig) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
+
 	return &Server{
 		logger:   NewLogger(),
 		port:     serverConfig.Port,
@@ -62,8 +63,11 @@ func NewServer(serverConfig *ServerConfig) *Server {
 }
 
 // WithContexts registers contexts with the server
-func (s *Server) WithContexts(contexts ...*Context) *Server {
-	s.contexts = contexts
+func (s *Server) WithContexts(contextFacories ...ContextFactory) *Server {
+	for _, contextFactory := range contextFacories {
+		context := contextFactory(s.ctx, s.router)
+		s.contexts = append(s.contexts, context)
+	}
 	return s
 }
 
@@ -74,10 +78,13 @@ func (s *Server) Router() *mux.Router {
 
 // Start initializes and starts the server
 func (s *Server) Start() error {
-
-	s.initContexts()
 	// Register health check endpoint
 	s.registerHealthCheck()
+
+	// Start all contexts
+	for _, ctx := range s.contexts {
+		ctx.Start()
+	}
 
 	// Create HTTP server
 	addr := fmt.Sprintf("%s:%d", s.host, s.port)
@@ -152,11 +159,5 @@ func (s *Server) registerHealthCheck() {
 		fmt.Fprintf(w, "Status: UP")
 	}).Methods("GET")
 
-	s.logger.Info("Registered health check endpoint at /")
-}
-
-func (s *Server) initContexts() {
-	for _, context := range s.contexts {
-		context.bindEndpoints(s.router)
-	}
+	s.logger.Info("registered health check endpoint at GET /")
 }

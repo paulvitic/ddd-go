@@ -1,6 +1,7 @@
 package ddd
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 
@@ -21,31 +22,54 @@ const (
 )
 
 type Endpoint interface {
-	// Path returns the endpoint's URL path
-	Path() string
+	OnInit() error
 }
 
-func BindEndpoint(endpoint Endpoint, router *mux.Router) {
-	path := endpoint.Path()
-	handlers := requestHandlers(endpoint)
+type endpoint struct {
+	paths  []string
+	value  any
+	logger *Logger
+	router *mux.Router
+}
 
-	for method, methodName := range handlers {
-		// Capture variables for closure
-		currentMethod := method
-		currentMethodName := methodName
+func NewEndpoint(value any, paths []string, logger *Logger, router *mux.Router) Endpoint {
 
-		handler := func(w http.ResponseWriter, r *http.Request) {
-			callHandlerMethod(endpoint, currentMethodName, w, r)
-		}
+	// Check if value is a pointer type
+	rv := reflect.ValueOf(value)
+	if rv.Kind() != reflect.Ptr {
+		panic(fmt.Sprintf("NewEndpoint: value must be a pointer type, got %T", value))
+	}
 
-		router.HandleFunc(path, handler).Methods(string(currentMethod))
+	// Optional: Check if the pointer is not nil
+	if rv.IsNil() {
+		panic("NewEndpoint: value cannot be a nil pointer")
+	}
+
+	return &endpoint{
+		paths:  paths,
+		value:  value,
+		logger: logger,
+		router: router,
 	}
 }
 
-func requestHandlers(endpoint Endpoint) map[HttpMethod]string {
-	typ := reflect.TypeOf(endpoint)
+func (e *endpoint) OnInit() error {
+	for _, path := range e.paths {
+		handlers := e.requestHandlers()
 
-	handlers := make(map[HttpMethod]string)
+		for method, handler := range handlers {
+			e.router.HandleFunc(path, handler).Methods(string(method))
+			e.logger.Info("registered request handler at %s %s", string(method), path)
+		}
+	}
+	return nil
+}
+
+// requestHandlers returns a map of HTTP methods to their actual handler functions
+func (e *endpoint) requestHandlers() map[HttpMethod]http.HandlerFunc {
+	typ := reflect.TypeOf(e.value)
+	val := reflect.ValueOf(e.value)
+	handlers := make(map[HttpMethod]http.HandlerFunc)
 
 	// Method name to HTTP method mapping
 	methodMap := map[string]HttpMethod{
@@ -67,27 +91,23 @@ func requestHandlers(endpoint Endpoint) map[HttpMethod]string {
 		if httpMethod, exists := methodMap[methodName]; exists {
 			// Verify the method signature: func(http.ResponseWriter, *http.Request)
 			if isValidHandlerSignature(method.Type) {
-				handlers[httpMethod] = methodName
+				// Get the actual method and create a handler function
+				methodValue := val.MethodByName(methodName)
+
+				// Create the handler function that calls the method directly
+				handler := func(w http.ResponseWriter, r *http.Request) {
+					methodValue.Call([]reflect.Value{
+						reflect.ValueOf(w),
+						reflect.ValueOf(r),
+					})
+				}
+
+				handlers[httpMethod] = handler
 			}
 		}
 	}
 
 	return handlers
-}
-
-func callHandlerMethod(endpoint any, methodName string, w http.ResponseWriter, r *http.Request) {
-	endpointValue := reflect.ValueOf(endpoint)
-	handlerMethod := endpointValue.MethodByName(methodName)
-
-	if !handlerMethod.IsValid() {
-		http.Error(w, "Handler method not found", http.StatusInternalServerError)
-		return
-	}
-
-	handlerMethod.Call([]reflect.Value{
-		reflect.ValueOf(w),
-		reflect.ValueOf(r),
-	})
 }
 
 // isValidHandlerSignature checks if a method has the correct HTTP handler signature
@@ -108,4 +128,11 @@ func isValidHandlerSignature(methodType reflect.Type) bool {
 
 	return methodType.In(1).Implements(responseWriterType) &&
 		methodType.In(2) == requestType
+}
+
+func GetContext(r *http.Request) *Context {
+	if ctx := r.Context().Value(AppContextKey); ctx != nil {
+		return ctx.(*Context)
+	}
+	return nil
 }

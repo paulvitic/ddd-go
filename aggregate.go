@@ -11,7 +11,7 @@ import (
 type Aggregate interface {
 	Entity
 	// Event management
-	RaiseEvent(aggregateType string, aggregateID ID, payload any) Aggregate
+	RaiseEvent(payload any)
 	GetAllEvents() []Event
 	GetFirstEvent() Event
 	ClearEvents()
@@ -30,7 +30,7 @@ func (a *aggregate) AggregateType() string {
 }
 
 // RaiseEvent adds an event to the aggregate's event list
-func (a *aggregate) RaiseEvent(aggregateType string, aggregateID ID, payload any) Aggregate {
+func (a *aggregate) RaiseEvent(payload any) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -39,13 +39,12 @@ func (a *aggregate) RaiseEvent(aggregateType string, aggregateID ID, payload any
 	a.events = append(
 		a.events,
 		&event{
-			aggregateType,
-			aggregateID,
+			a.AggregateType(),
+			a.ID(),
 			eventType,
 			timeStamp,
 			payload,
 		})
-	return a
 }
 
 // GetAllEvents returns all the events that have been raised and clears them.
