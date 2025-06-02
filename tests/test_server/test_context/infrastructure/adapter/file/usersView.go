@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/paulvitic/ddd-go"
 	"github.com/paulvitic/ddd-go/tests/test_server/test_context/domain/model"
 )
 
@@ -59,4 +60,19 @@ func (u *users) ById(id string) (*model.UserProjection, error) {
 
 	// Convert User to UserView
 	return user, nil
+}
+
+func (u *users) SubscribedTo() map[string]ddd.HandleEvent {
+	subscriptions := make(map[string]ddd.HandleEvent)
+	subscriptions[ddd.EventType(model.UserRegistered{})] = u.onUserRegistered
+	return subscriptions
+}
+
+func (u *users) onUserRegistered(event ddd.Event) error {
+	// Identify event type
+	if event.Type() != ddd.EventType(model.UserRegistered{}) {
+		return fmt.Errorf("unexpected event type: %s", event.Type())
+	}
+
+	return nil
 }

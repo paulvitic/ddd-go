@@ -39,3 +39,12 @@ func ToUserByIdQuery(r *http.Request) (ddd.Query, error) {
 	return ddd.NewQuery(query.Filter), nil
 
 }
+
+func ToIdentityIdProviderEvent(r *http.Request) ddd.Event {
+
+	event, err := ddd.EventFromJsonString("")
+	if err != nil {
+		panic("can not create event from json string")
+	}
+	return event
+}
