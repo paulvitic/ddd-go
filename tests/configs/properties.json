@@ -1,0 +1,8 @@
+{
+    "serverHost": "localhost",
+    "serverPort": 8081,
+    "connectionString": "test_connection_string",
+    "inMemoryEventLogBufferSize": 100,
+    "eventListenerWorkerCount": 1,
+    "filePersitenceDir": "data"
+}

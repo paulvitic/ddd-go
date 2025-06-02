@@ -2,36 +2,32 @@ package ddd
 
 import (
 	"math"
-	"reflect"
 )
 
+type QueryFiler = func(ctx *Context) (QueryResponse, error)
+
 type Query interface {
-	Type() string
-	Filter() interface{}
+	Filter(ctx *Context) (QueryResponse, error)
 	PageSize() int
 	PageIndex() int
 }
 
 type query struct {
-	filter    interface{}
+	filter    QueryFiler
 	pageIndex int
 	pageSize  int
 }
 
-func NewQuery(filter interface{}) Query {
+func NewQuery(filter QueryFiler) Query {
 	return &query{filter, 0, 1}
 }
 
-func NewPagedQuery(filter interface{}, pageIndex int, pageSize int) Query {
+func NewPagedQuery(filter QueryFiler, pageIndex int, pageSize int) Query {
 	return &query{filter, pageIndex, pageSize}
 }
 
-func (c *query) Type() string {
-	return reflect.TypeOf(c.Filter()).PkgPath() + "." + reflect.TypeOf(c.Filter()).Name()
-}
-
-func (c *query) Filter() interface{} {
-	return c.filter
+func (c *query) Filter(ctx *Context) (QueryResponse, error) {
+	return c.filter(ctx)
 }
 
 func (c *query) PageSize() int {
@@ -43,7 +39,7 @@ func (c *query) PageIndex() int {
 }
 
 type QueryResponse interface {
-	Items() interface{}
+	Items() any
 	TotalPages() int
 	PageNumber() int
 	HasPrev() bool
@@ -53,21 +49,21 @@ type QueryResponse interface {
 }
 
 type queryResponse struct {
-	items     interface{}
+	items     any
 	count     int
 	pageIndex int
 	pageSize  int
 }
 
-func NewQueryResponse(items interface{}) QueryResponse {
+func NewQueryResponse(items any) QueryResponse {
 	return &queryResponse{items, 1, 0, 1}
 }
 
-func NewPagedQueryResponse(items interface{}, count int, pageIndex int, pageSize int) QueryResponse {
+func NewPagedQueryResponse(items any, count int, pageIndex int, pageSize int) QueryResponse {
 	return &queryResponse{items, count, pageIndex, pageSize}
 }
 
-func (qr *queryResponse) Items() interface{} {
+func (qr *queryResponse) Items() any {
 	return qr.items
 }
 
@@ -99,8 +95,4 @@ func (qr *queryResponse) Next() int {
 		return qr.PageNumber() + 1
 	}
 	return 0
-}
-
-func QueryType(filter interface{}) string {
-	return reflect.TypeOf(filter).PkgPath() + "." + reflect.TypeOf(filter).Name()
 }

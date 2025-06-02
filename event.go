@@ -12,15 +12,16 @@ type Event interface {
 	AggregateID() ID
 	Type() string
 	TimeStamp() time.Time
-	Payload() interface{}
+	Payload() any
 	ToJsonString() (string, error)
 }
+
 type event struct {
 	aggregateType string
 	aggregateID   ID
 	eventType     string
 	timeStamp     time.Time
-	payload       interface{}
+	payload       any
 }
 
 func (e *event) AggregateType() string {
@@ -44,7 +45,7 @@ func (e *event) Payload() any {
 }
 
 func (e *event) ToJsonString() (string, error) {
-	data, err := json.Marshal(map[string]interface{}{
+	data, err := json.Marshal(map[string]any{
 		"aggregate_type": e.aggregateType,
 		"aggregate_id":   e.aggregateID.String(),
 		"event_type":     e.eventType,
@@ -57,12 +58,12 @@ func (e *event) ToJsonString() (string, error) {
 	return string(data), nil
 }
 
-func EventType(eventPayload interface{}) string {
+func EventType(eventPayload any) string {
 	return reflect.TypeOf(eventPayload).PkgPath() + "." + reflect.TypeOf(eventPayload).Name()
 }
 
 func EventFromJsonString(jsonString string) (Event, error) {
-	var data map[string]interface{}
+	var data map[string]any
 	if err := json.Unmarshal([]byte(jsonString), &data); err != nil {
 		return nil, err
 	}
@@ -77,11 +78,11 @@ func EventFromJsonString(jsonString string) (Event, error) {
 		aggregateID:   NewID(data["aggregate_id"].(string)),
 		eventType:     data["event_type"].(string),
 		timeStamp:     timeStamp,
-		payload:       data["payload"].(interface{}),
+		payload:       data["payload"],
 	}, nil
 }
 
-func MapEventPayload[T interface{}](event Event, payload T) T {
+func MapEventPayload[T any](event Event, payload T) T {
 	jsonStr, err := json.Marshal(event.Payload())
 	if err != nil {
 		fmt.Println(err)

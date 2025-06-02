@@ -4,144 +4,262 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
+	"time"
 )
 
-type EventBus interface {
-	Handler() HandlerFunc
-	Dispatch(ctx context.Context, event Event) error
-	DispatchFrom(ctx context.Context, producer EventProducer) error
-	Use(middleware MiddlewareFunc)
-	RegisterView(view View) error
-	RegisterPolicy(policy Policy) error
+// EventBusMiddleware represents a middleware function that can wrap the dispatch process
+type EventBusMiddleware func(next HandleEvent) HandleEvent
+
+// eventBus is the standard implementation of the EventBus interface
+type EventBus struct {
+	ctx           *Context
+	logger        *Logger
+	handlers      map[string][]HandleEvent
+	handlersMutex sync.RWMutex
+	queue         chan Event
+	running       bool
+	stopCh        chan struct{}
+	workerCount   int
+	listenerWg    sync.WaitGroup
+	mu            sync.RWMutex
+	middleware    []EventBusMiddleware
+	dispatchChain HandleEvent
 }
 
-type eventBus struct {
-	serviceBus ServiceBus
-	commandBus CommandBus
-	views      map[string][]View
-
-	policies map[string][]Policy
-}
-
-func NewEventBus(commandBus CommandBus) EventBus {
-	return &eventBus{
-		NewServiceBus(),
-		commandBus,
-		make(map[string][]View),
-		make(map[string][]Policy),
+// NewEventBus creates a new event bus
+func NewEventBus(ctx *Context) *EventBus {
+	eb := &EventBus{
+		ctx:         ctx,
+		logger:      ctx.logger,
+		handlers:    make(map[string][]HandleEvent),
+		queue:       make(chan Event, 100), // Buffer size may come from configuration
+		workerCount: 1,                     // Default to 1 worker, could be configurable
+		middleware:  make([]EventBusMiddleware, 0),
 	}
+
+	// Initialize the dispatch chain with the core dispatch logic
+	eb.buildDispatchChain()
+
+	return eb
 }
 
-func (c *eventBus) Handler() HandlerFunc {
-	return func(ctx context.Context, msg Payload) (interface{}, error) {
-		event, ok := msg.(Event)
-		if ok {
-			var errs []error
-			if err := c.dispatchToViews(event); err != nil {
-				errs = append(errs, err)
-			}
-			if err := c.dispatchToPolicies(event); err != nil {
-				errs = append(errs, err)
-			}
-			if len(errs) > 0 {
-				return nil, errors.New("Errors encountered: " + fmt.Sprintf("%v", errs))
-			}
-			return true, nil
-		} else {
-			return ok, errors.New("eventBus.Handler() expects an Event")
-		}
-	}
-}
+func (b *EventBus) Init() {
+	// TODO Find and add event bus middleware from the context
 
-func (c *eventBus) Dispatch(ctx context.Context, event Event) error {
-	_, err := c.serviceBus.Dispatch(ctx, event)
+	// Resolve all event handlers from the context
+	handlers, err := ResolveAll[EventHandler](b.ctx)
 	if err != nil {
-		return err
+		panic("can not get event handlers")
 	}
-	return nil
+	b.Subscribe(handlers)
 }
 
-func (c *eventBus) DispatchFrom(ctx context.Context, producer EventProducer) error {
-	var errs []error
-	for _, ev := range producer.Events() {
-		if err := c.Dispatch(ctx, ev); err != nil {
-			errs = append(errs, err)
+// WithMiddleware adds middleware to the dispatch pipeline
+func (b *EventBus) WithMiddleware(middleware ...EventBusMiddleware) *EventBus {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// Append new middleware to existing middleware
+	b.middleware = append(b.middleware, middleware...)
+
+	// Rebuild the dispatch chain with new middleware
+	b.buildDispatchChain()
+
+	return b
+}
+
+// buildDispatchChain constructs the middleware chain with the core dispatch logic at the end
+func (b *EventBus) buildDispatchChain() {
+	// Core dispatch function (the final handler in the chain)
+	coreDispatch := func(event Event) error {
+		return b.coreDispatch(event)
+	}
+
+	// Build the chain by wrapping from right to left (last middleware wraps first)
+	b.dispatchChain = coreDispatch
+	for i := len(b.middleware) - 1; i >= 0; i-- {
+		b.dispatchChain = b.middleware[i](b.dispatchChain)
+	}
+}
+
+// coreDispatch is the original dispatch logic, now called at the end of the middleware chain
+func (b *EventBus) coreDispatch(event Event) error {
+	// Check if event bus is running
+	b.mu.RLock()
+	running := b.running
+	b.mu.RUnlock()
+
+	if !running {
+		return errors.New("event bus is not running")
+	}
+
+	// Add event to queue for async processing
+	select {
+	case b.queue <- event:
+		return nil
+	default:
+		// Queue is full - this is non-blocking
+		return errors.New("event queue is full, event not published")
+	}
+}
+
+// Subscribe registers handlers for event types
+func (b *EventBus) Subscribe(handlers []EventHandler) {
+	b.handlersMutex.Lock()
+	defer b.handlersMutex.Unlock()
+
+	for _, handler := range handlers {
+		subscriptions := handler.SubscribedTo()
+
+		for eventType, handlerFunc := range subscriptions {
+			if _, ok := b.handlers[eventType]; !ok {
+				b.handlers[eventType] = []HandleEvent{}
+			}
+
+			b.handlers[eventType] = append(b.handlers[eventType], handlerFunc)
+
+			eventTypeParts := strings.Split(eventType, ".")
+			b.logger.Info("subscribed handler to event %s", eventTypeParts[len(eventTypeParts)-1])
 		}
 	}
-	if len(errs) > 0 {
-		return errors.New("Errors encountered: " + fmt.Sprintf("%v", errs))
-	}
-	return nil
+
 }
 
-func (c *eventBus) Use(middleware MiddlewareFunc) {
-	c.serviceBus.Use(middleware)
+// Dispatch sends an event through the middleware pipeline
+func (b *EventBus) Dispatch(event Event) error {
+	// Execute the middleware chain
+	return b.dispatchChain(event)
 }
 
-func (c *eventBus) RegisterView(view View) error {
-	var errs []error
-	for _, subscribedTo := range view.SubscribedTo() {
-		c.views[subscribedTo] = append(c.views[subscribedTo], view)
-		err := c.serviceBus.Register(subscribedTo, c.Handler())
+// Dispatch sends an event through the middleware pipeline
+func (b *EventBus) DispatchFrom(aggregate Aggregate) error {
+	for _, event := range aggregate.GetAllEvents() {
+		err := b.Dispatch(event)
 		if err != nil {
+			return err
+		}
+	}
+	// Clear events after dispatching
+	aggregate.ClearEvents()
+	return nil
+}
+
+// Start begins the event bus operations
+func (b *EventBus) Start() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.running {
+		return nil // Already running
+	}
+
+	b.running = true
+	b.stopCh = make(chan struct{})
+
+	// Start worker goroutines to process events from the queue
+	ctx := context.Background()
+	for range b.workerCount {
+		b.listenerWg.Add(1)
+		go b.listen(ctx, b.queue)
+	}
+
+	b.logger.Info("event bus started with %d workers", b.workerCount)
+	return nil
+}
+
+// Stop gracefully shuts down the event bus
+func (b *EventBus) Stop() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if !b.running {
+		return nil // Already stopped
+	}
+
+	close(b.stopCh)
+	b.running = false
+
+	// Wait for workers to finish with a reasonable timeout
+	done := make(chan struct{})
+	go func() {
+		b.listenerWg.Wait()
+		close(done)
+	}()
+
+	// Create a timeout context for cleanup
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Wait for workers to finish or timeout
+	select {
+	case <-done:
+		b.logger.Info("Event bus stopped")
+		return nil
+	case <-ctx.Done():
+		b.logger.Warn("Timeout waiting for event bus to stop")
+		return ctx.Err()
+	}
+}
+
+// IsRunning returns whether the event bus is currently running
+func (b *EventBus) IsRunning() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.running
+}
+
+// listen is the worker goroutine that processes events from the queue
+func (b *EventBus) listen(ctx context.Context, eventQueue chan Event) {
+	defer b.listenerWg.Done()
+
+	workerID := fmt.Sprintf("worker-%d", time.Now().UnixNano()%1000) // Simple worker ID
+	b.logger.Info("worker %s started", workerID)
+
+	for {
+		select {
+		case event, ok := <-eventQueue:
+			if !ok {
+				b.logger.Info("worker %s: Channel was closed", workerID)
+				return
+			}
+			// Process the event by calling registered handlers
+			b.processEvent(event)
+
+		case <-b.stopCh:
+			b.logger.Info("worker %s: Event bus is being stopped", workerID)
+			return
+
+		case <-ctx.Done():
+			b.logger.Info("worker %s: Context was cancelled", workerID)
+			return
+		}
+	}
+}
+
+// processEvent executes all registered handlers for an event
+func (b *EventBus) processEvent(event Event) {
+	b.handlersMutex.RLock()
+	handlers, ok := b.handlers[event.Type()]
+	b.handlersMutex.RUnlock()
+
+	if !ok {
+		// No handlers for this event type
+		return
+	}
+
+	// Execute all handlers for this event
+	var errs []error
+	for _, handle := range handlers {
+		if err := handle(event); err != nil {
+			b.logger.Error("Error handling event %s: %v", event.Type(), err)
 			errs = append(errs, err)
+			// Continue processing other handlers even if one fails
 		}
 	}
-	if len(errs) > 0 {
-		return errors.New("Errors encountered: " + fmt.Sprintf("%v", errs))
-	}
-	return nil
-}
 
-func (c *eventBus) RegisterPolicy(policy Policy) error {
-	var errs []error
-	for _, subscribedTo := range policy.SubscribedTo() {
-		c.policies[subscribedTo] = append(c.policies[subscribedTo], policy)
-		err := c.serviceBus.Register(subscribedTo, c.Handler())
-		if err != nil {
-			errs = append(errs, err)
-		}
-	}
 	if len(errs) > 0 {
-		return errors.New("Errors encountered: " + fmt.Sprintf("%v", errs))
+		b.logger.Error("Errors encountered while processing event %s: %d errors", event.Type(), len(errs))
 	}
-	return nil
-}
-
-func (c *eventBus) dispatchToViews(event Event) error {
-	var errs []error
-	views, ok := c.views[event.Type()]
-	if ok {
-		for _, view := range views {
-			if err := view.MutateWhen(event); err != nil {
-				errs = append(errs, err)
-			}
-		}
-	}
-	if len(errs) > 0 {
-		return errors.New("Errors encountered: " + fmt.Sprintf("%v", errs))
-	}
-	return nil
-}
-
-func (c *eventBus) dispatchToPolicies(event Event) error {
-	var errs []error
-	policies, ok := c.policies[event.Type()]
-	if ok {
-		for _, policy := range policies {
-			cmd, err := policy.When(event)
-			if err != nil {
-				errs = append(errs, err)
-			}
-			if cmd != nil {
-				if err := c.commandBus.Dispatch(context.Background(), cmd); err != nil {
-					errs = append(errs, err)
-				}
-			}
-		}
-	}
-	if len(errs) > 0 {
-		return errors.New("Errors encountered: " + fmt.Sprintf("%v", errs))
-	}
-	return nil
 }
