@@ -11,7 +11,7 @@ import (
 	"github.com/paulvitic/ddd-go/tests/test_server/test_context/domain/model"
 )
 
-type users struct {
+type usersView struct {
 	filePath string
 	mu       sync.RWMutex
 }
@@ -24,12 +24,12 @@ func NewUsersView(filePersistenceConfig *FilePersistenceConfig) model.UsersView 
 		panic(fmt.Sprintf("failed to create data directory: %v", err))
 	}
 
-	return &users{
+	return &usersView{
 		filePath: filepath.Join(dataDir, "users.json"),
 	}
 }
 
-func (u *users) ById(id string) (*model.UserProjection, error) {
+func (u *usersView) ById(id string) (*model.UserProjection, error) {
 	u.mu.RLock()
 	defer u.mu.RUnlock()
 
@@ -62,13 +62,13 @@ func (u *users) ById(id string) (*model.UserProjection, error) {
 	return user, nil
 }
 
-func (u *users) SubscribedTo() map[string]ddd.HandleEvent {
+func (u *usersView) SubscribedTo() map[string]ddd.HandleEvent {
 	subscriptions := make(map[string]ddd.HandleEvent)
 	subscriptions[ddd.EventType(model.UserRegistered{})] = u.onUserRegistered
 	return subscriptions
 }
 
-func (u *users) onUserRegistered(event ddd.Event) error {
+func (u *usersView) onUserRegistered(event ddd.Event) error {
 	// Identify event type
 	if event.Type() != ddd.EventType(model.UserRegistered{}) {
 		return fmt.Errorf("unexpected event type: %s", event.Type())
